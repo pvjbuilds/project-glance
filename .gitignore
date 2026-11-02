@@ -1,0 +1,13 @@
+.DS_Store
+.env
+venv/
+.venv/
+__pycache__/
+node_modules/
+.build/
+build/
+*.app/
+store.json
+.lock
+docs/ai/architecture.*.json
+docs/ai/archify-recheck-*/

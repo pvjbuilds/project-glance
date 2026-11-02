@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Project overview: proposed local architecture",
+    "output": "docs/ai/architecture.html",
+    "quality_profile": "showcase",
+    "locale": "en"
+  },
+  "components": [
+    {
+      "id": "person",
+      "type": "external",
+      "label": "Person",
+      "sublabel": "Explicitly opts in",
+      "pos": [
+        40,
+        80
+      ],
+      "size": [
+        145,
+        64
+      ]
+    },
+    {
+      "id": "session",
+      "type": "backend",
+      "label": "Agent session",
+      "sublabel": "Explicit association",
+      "pos": [
+        300,
+        80
+      ],
+      "size": [
+        155,
+        64
+      ]
+    },
+    {
+      "id": "updater",
+      "type": "backend",
+      "label": "Shared updater",
+      "sublabel": "Lock + revision check",
+      "pos": [
+        590,
+        80
+      ],
+      "size": [
+        165,
+        64
+      ]
+    },
+    {
+      "id": "records",
+      "type": "database",
+      "label": "Local store",
+      "sublabel": "Records + associations",
+      "pos": [
+        860,
+        80
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "viewer",
+      "type": "frontend",
+      "label": "Native viewer",
+      "sublabel": "Menu bar + floating card",
+      "pos": [
+        860,
+        300
+      ],
+      "size": [
+        190,
+        64
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "opt-in",
+      "from": "person",
+      "to": "session",
+      "label": "enroll or connect"
+    },
+    {
+      "id": "updates",
+      "from": "session",
+      "to": "updater",
+      "label": "enroll / connect / update"
+    },
+    {
+      "id": "save",
+      "from": "updater",
+      "to": "records",
+      "label": "atomic write"
+    },
+    {
+      "id": "watch",
+      "from": "records",
+      "to": "viewer",
+      "label": "watch + read"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Explicit participation",
+      "items": [
+        "Session association is a workflow guard, not authentication",
+        "No machine-wide scan or automatic enrollment"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Local state",
+      "items": [
+        "One JSON envelope and a lock file in a selectable store folder",
+        "Viewer retains last valid content in memory; selection and position use macOS preferences"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Review status",
+      "items": [
+        "Prototype reviewed; changes requested; re-review pending",
+        "No continuous model process or cloud service"
+      ]
+    }
+  ]
+}
