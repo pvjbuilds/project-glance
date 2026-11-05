@@ -1,6 +1,6 @@
 # Current state
 
-As of 2026-11-05, Asia/Kolkata. Writer: Codex implementation agent; next reviewer: independent reviewer for later material changes. Canonical checkout is this folder; the local `master` branch has a private remote verified by the coordinating session; the 5 November refinement passed local source review within its stated scope.
+As of 2026-11-06, Asia/Kolkata. Writer: Codex implementation agent; next reviewer: independent reviewer for later material changes. Canonical checkout is this folder; the local `master` branch has a private remote verified by the coordinating session; the 5 November refinement passed local source review within its stated scope.
 
 ## Objective and checkpoint
 
@@ -25,3 +25,7 @@ Complete the remaining native lifecycle checks when practical and decide whether
 The screenshot-style menu-bar popover is built. Structured read-only milestone checklists accept only unique IDs and JSON booleans; legacy records do not acquire invented completion. The build, expanded store checks and local skill validation passed. The coordinating session explicitly updated the sole real Project Glance record to version 7 with five completed and two pending milestones, and verified the revised app process was running. This establishes saved data and process presence, not menu-bar interaction.
 
 See [rendering validation](reviews/2026-11-05-render-validation.md) for capture methods, hashes and the image-preview transport issue. Actual anchor, dismissal, login, wake and full-screen/Spaces interactions remain unverified. The 5 November source review passed within scope in a fresh local Codex session; see [local review](reviews/2026-11-05-codex.md). Same-provider review shares blind spots and is not cross-provider review; the earlier cross-provider review covers only the 2 November snapshot. No global agent skill or hook is installed.
+
+## 2026-11-06 explicit show action
+
+`scripts/show.sh` launches the built app with `--show`; reopening requests show rather than toggle the popover. Ordinary startup stays silent. A separate native QA bundle with an isolated missing store reported initial show, repeated show and reopen all true, and silent startup true. The parent delivered a reopen request to the previous built app but did not claim visual confirmation. LaunchServices delivery to an already running final build, actual screen visibility and user click interactions remain unverified. The 5 November local source review predates this change; proportionate review of the new source remains pending. See [show validation](reviews/2026-11-06-show-validation.md).

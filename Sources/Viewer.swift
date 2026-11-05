@@ -98,9 +98,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let controller = NSViewController(); controller.view = overview; popover.contentViewController = controller; popover.contentSize = overview.frame.size; popover.behavior = .transient; popover.delegate = self
         overview.onSelect = { [weak self] id in self?.selected = id; UserDefaults.standard.set(id, forKey: "selectedProject"); self?.redraw() }; overview.onQuit = { NSApp.terminate(nil) }; overview.onSettings = { [weak self] in self?.settings() }; overview.onContext = { [weak self] in self?.openContext() }
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(wake), name: NSWorkspace.didWakeNotification, object: nil)
-        refresh(); watch(); timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.refresh() }
+        refresh(); watch(); timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.refresh() }; if CommandLine.arguments.contains("--show") { DispatchQueue.main.async { [weak self] in self?.showPopover() } }
     }
-    @objc func toggle() { if popover.isShown { popover.performClose(nil) } else if let button = status.button { refresh(); popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY) } }
+    @objc func toggle() { if popover.isShown { popover.performClose(nil) } else { showPopover() } }
+    func showPopover(attempt: Int = 0) {
+        guard !popover.isShown else { return }
+        if let button = status.button, button.window != nil { refresh(); popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY) }
+        if !popover.isShown && attempt < 30 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.showPopover(attempt: attempt + 1) } }
+    }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showPopover(); return true }
     @objc func quit() { NSApp.terminate(nil) }
     @objc func wake() { refresh(); watch() }
     func redraw() { overview.render(projects: cached, selected: selected, unavailable: unavailable) }

@@ -9,12 +9,12 @@ Requires macOS, Apple Command Line Tools and Swift. From the project root:
 ```sh
 scripts/build.sh
 python3 tests/store.py
-open build/ProjectOverview.app
+scripts/show.sh
 ```
 
 The app uses `~/Library/Application Support/ProjectOverview/store.json`. The CLI and viewer use that same default. Pass `--store DIRECTORY` before the command to the CLI, or after the app executable to the viewer, to use a different store for experiments. Only explicit enrollment creates a store; a missing store makes list, connect and update fail without creating it. No data is enrolled by installing or launching the app. The source and build contain no example personal project data.
 
-The store interface is experimental and may change. Both assistants must explicitly associate each new session before updating; no automatic chat integration has been installed. Commands and payload format will be documented after review. Do not put secrets or transcripts into status fields.
+The show script opens the existing popover or launches the app and opens it. Ordinary app launch without `--show` stays silent. The store interface is experimental and may change. Both assistants must explicitly associate each new session before updating; no automatic chat integration has been installed. Do not put secrets or transcripts into status fields.
 
 Shared project contract, architecture, review and limitations: [docs/ai/README.md](docs/ai/README.md).
 
@@ -45,4 +45,4 @@ The card displays its last update time and marks entries older than seven days a
 
 ## What is the release status?
 
-The project name is a placeholder. The app is a local prototype pending native interaction, reliability and independent cross-provider review. No license, public release or installation method has been selected.
+The project name is a placeholder. The app is a local prototype with a completed independent local source review; further native interaction and reliability checks remain. Same-provider review shares blind spots. No license, public release or installation method has been selected.
