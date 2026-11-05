@@ -16,6 +16,6 @@
     }
   },
   "narrative": {
-    "overview": "A compact native macOS menu-bar popover follows the user-selected screenshot's dark shell, inset sections and quiet footer. The utility shown in the reference supplies no branding or unrelated controls. The product name is provisional."
+    "overview": "A compact native macOS menu-bar popover follows the user-selected screenshot's dark shell, inset sections and quiet footer. The utility shown in the reference supplies no branding or unrelated controls. The product name is provisional. Concrete token primitives are in the frontmatter; the `.impeccable/design.json` sidecar holds supplemental metadata."
   }
 }

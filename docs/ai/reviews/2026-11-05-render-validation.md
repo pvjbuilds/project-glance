@@ -1,6 +1,6 @@
 # Menu-bar rendering validation — 2026-11-05
 
-The reviewed content view is `Sources/Viewer.swift` SHA-256 `0964dfeedf922b7bbe7320e50171dae29599fd8ddb6914c3db5839a2357f974a`. The updater is `Sources/Store.swift` SHA-256 `33676795bed1d65e76b198b36aebe2bd2739031120947f9687e8f1edcaa633a6`. These identify the uncommitted candidate at the time of capture.
+The reviewed content view is `Sources/Viewer.swift` SHA-256 `0964dfeedf922b7bbe7320e50171dae29599fd8ddb6914c3db5839a2357f974a`. The updater is `Sources/Store.swift` SHA-256 `33676795bed1d65e76b198b36aebe2bd2739031120947f9687e8f1edcaa633a6`. These identify the candidate captured before it was committed in `53536c7`.
 
 A native self-test briefly mapped the app's own clearly labelled fictional windows, then rendered the production content view at 1x and 2x. Each fixture ran in a fresh process. Main, legacy and long-content views used populated `CALayer.render(in:)`; the empty view used `NSView.cacheDisplay`. The long-bottom image was programmatically scrolled; no computer-use control or live project data was used. The captures are ignored build artifacts under `build/previews/final-pass/` and are not committed.
 
