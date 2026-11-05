@@ -1,6 +1,6 @@
 # Current state
 
-As of 2026-11-05, Asia/Kolkata. Writer: Codex implementation agent; next reviewer: independent reviewer for later material changes. Canonical checkout is this folder; the local `master` branch has a private remote verified by the coordinating session; the 5 November refinement is under review.
+As of 2026-11-05, Asia/Kolkata. Writer: Codex implementation agent; next reviewer: independent reviewer for later material changes. Canonical checkout is this folder; the local `master` branch has a private remote verified by the coordinating session; the 5 November refinement passed local source review within its stated scope.
 
 ## Objective and checkpoint
 
@@ -22,6 +22,6 @@ Complete the remaining native lifecycle checks when practical and decide whether
 
 ## 2026-11-05 menu-bar redesign
 
-The screenshot-style menu-bar popover is built. Structured read-only milestone checklists accept only unique IDs and JSON booleans; legacy records do not acquire invented completion. The build, expanded store checks and local skill validation passed. The coordinating session explicitly updated the sole real Project Glance record to version 6 with four completed and three pending milestones, and verified the revised app process was running. This establishes saved data and process presence, not menu-bar interaction.
+The screenshot-style menu-bar popover is built. Structured read-only milestone checklists accept only unique IDs and JSON booleans; legacy records do not acquire invented completion. The build, expanded store checks and local skill validation passed. The coordinating session explicitly updated the sole real Project Glance record to version 7 with five completed and two pending milestones, and verified the revised app process was running. This establishes saved data and process presence, not menu-bar interaction.
 
-See [rendering validation](reviews/2026-11-05-render-validation.md) for capture methods, hashes and the image-preview transport issue. Actual anchor, dismissal, login, wake and full-screen/Spaces interactions remain unverified. Independent cross-provider review of this new revision is pending permission for the requested external review payload; the earlier review covers only the 2 November snapshot. No global agent skill or hook is installed.
+See [rendering validation](reviews/2026-11-05-render-validation.md) for capture methods, hashes and the image-preview transport issue. Actual anchor, dismissal, login, wake and full-screen/Spaces interactions remain unverified. The 5 November source review passed within scope in a fresh local Codex session; see [local review](reviews/2026-11-05-codex.md). Same-provider review shares blind spots and is not cross-provider review; the earlier cross-provider review covers only the 2 November snapshot. No global agent skill or hook is installed.

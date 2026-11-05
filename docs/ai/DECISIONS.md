@@ -1,4 +1,4 @@
-review_mode: cross-provider — 2026-11-02, Praj
+review_mode: solo:codex — 2026-11-05, Praj (local review chosen; same-provider blind spots)
 
 # Decisions and assumptions
 
@@ -16,4 +16,7 @@ Codex proposes a dependency-free native macOS viewer with a local shared updater
 | A3 | Wake and file watching refresh state reliably across changed records and missing directories. | Stale displays could mislead. | Proposed 2026-11-02 | Unverified | Writer | Exercise lifecycle and recovery; show freshness. |
 
 ## 2026-11-05: Menu-bar presentation
-Praj selected a dark rounded menu-bar popover using a screenshot reference, superseding the floating card as the primary interface. Saved milestones are displayed as a read-only checklist; status is never inferred from prose. Product name remains provisional. Cross-provider review of this revision is pending.
+Praj selected a dark rounded menu-bar popover using a screenshot reference, superseding the floating card as the primary interface. Saved milestones are displayed as a read-only checklist; status is never inferred from prose. Product name remains provisional. The independent local Codex source review passed within its recorded scope; it shares provider blind spots.
+
+## 2026-11-05: Review mode
+Praj chose to keep this review local, superseding `cross-provider` selected on 2026-11-02. The designated reviewer is a fresh Codex session; same-provider review shares the builder’s blind spots and is not cross-provider review. The historical 2 November cross-provider review remains recorded.
