@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-05T23:48:59+05:30",
+  "title": "Design System: Project Glance",
+  "extensions": {
+    "colorMeta": {
+      "shell": {"role": "neutral", "displayName": "Charcoal shell"},
+      "card": {"role": "neutral", "displayName": "Inset card"},
+      "card-border": {"role": "neutral", "displayName": "Subtle border"}
+    },
+    "typographyMeta": {
+      "heading": {"displayName": "Heading", "purpose": "App identity"},
+      "state": {"displayName": "Project state", "purpose": "Current overall status"},
+      "body": {"displayName": "Body", "purpose": "Project and milestone text"},
+      "label": {"displayName": "Section label", "purpose": "Section headings"}
+    }
+  },
+  "narrative": {
+    "overview": "A compact native macOS menu-bar popover follows the user-selected screenshot's dark shell, inset sections and quiet footer. The utility shown in the reference supplies no branding or unrelated controls. The product name is provisional."
+  }
+}

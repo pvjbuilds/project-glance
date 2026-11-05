@@ -1,10 +1,10 @@
 # Current state
 
-As of 2026-11-02, Asia/Kolkata. Writer: Codex implementation agent; next reviewer: independent reviewer for later material changes. Canonical checkout is this folder; the local `master` branch has an initial commit; no remote exists.
+As of 2026-11-05, Asia/Kolkata. Writer: Codex implementation agent; next reviewer: independent reviewer for later material changes. Canonical checkout is this folder; the local `master` branch has a private remote verified by the coordinating session; the 5 November refinement is under review.
 
 ## Objective and checkpoint
 
-Validate a local native menu-bar and floating overview plus an explicit-enrollment shared store. This is a bounded local pilot, not a public release. Project Glance itself is the sole explicitly enrolled pilot item, stored outside the repository and associated with the current Codex session. No global assistant integration, app installation, launch-at-login setting or account was configured.
+Validate a local native menu-bar popover and explicit-enrollment shared store. This is a bounded local pilot, not a public release. Project Glance itself is the sole explicitly enrolled pilot item, stored outside the repository and associated with the current Codex session. No global assistant integration, app installation, launch-at-login setting or account was configured.
 
 ## Prototype and evidence
 
@@ -19,3 +19,9 @@ Claude Opus 5.5 returned **passed-within-scope (cross-provider)** for the bounde
 ## Next action
 
 Complete the remaining native lifecycle checks when practical and decide whether to install any global integration through the appropriate owner. Preserve explicit enrollment and review boundaries. Maintain current source and state together. No global integration until separately authorized.
+
+## 2026-11-05 menu-bar redesign
+
+The screenshot-style menu-bar popover is built. Structured read-only milestone checklists accept only unique IDs and JSON booleans; legacy records do not acquire invented completion. The build, expanded store checks and local skill validation passed. The implementation session did not change the real record. The user may update it explicitly through the shared updater.
+
+See [rendering validation](reviews/2026-11-05-render-validation.md) for capture methods, hashes and the image-preview transport issue. Actual anchor, dismissal, login, wake and full-screen/Spaces interactions remain unverified. Independent cross-provider review of this new revision is pending permission for the requested external review payload; the earlier review covers only the 2 November snapshot. No global agent skill or hook is installed.

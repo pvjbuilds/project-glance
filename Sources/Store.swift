@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import CoreFoundation
 
 struct StoreError: Error, CustomStringConvertible { let description: String; init(_ s: String) { description = s } }
 let fm = FileManager.default
@@ -15,6 +16,16 @@ func save(_ object: [String: Any], _ url: URL) throws {
 }
 func text(_ o: [String: Any], _ key: String) throws -> String {
     guard let value = o[key] as? String, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw StoreError("Missing field: \(key)") }; return value
+}
+func validateChecklist(_ payload: [String: Any]) throws {
+    guard let raw = payload["checklist"] else { return }
+    guard let items = raw as? [[String: Any]] else { throw StoreError("Invalid checklist: expected an array") }
+    var ids = Set<String>()
+    for item in items {
+        guard let id = item["id"] as? String, valid(id), ids.insert(id).inserted,
+              let title = item["title"] as? String, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let done = item["done"] as? NSNumber, CFGetTypeID(done) == CFBooleanGetTypeID() else { throw StoreError("Invalid checklist item") }
+    }
 }
 func run() throws {
     var args = Array(CommandLine.arguments.dropFirst())
@@ -47,7 +58,7 @@ func run() throws {
         }
         guard !projects.values.contains(where: { $0["request"] as? String == request }) else { throw StoreError("Request ID already belongs to another project") }
         let payload = try readObject(URL(fileURLWithPath: args[5]))
-        _ = try text(payload, "goal"); _ = try text(payload, "checkpoint"); _ = try text(payload, "status")
+        _ = try text(payload, "goal"); _ = try text(payload, "checkpoint"); _ = try text(payload, "status"); try validateChecklist(payload)
         projects[id] = ["schema": 1, "id": id, "request": request, "version": 1, "sessions": [session], "updatedAt": ISO8601DateFormatter().string(from: Date()), "status": payload]
         try commit(); print("enrolled: \(id)"); return
     }
@@ -63,7 +74,7 @@ func run() throws {
         guard sessions.contains(args[3]) else { throw StoreError("Session is not associated") }
         guard expected == version else { throw StoreError("Version conflict: current version is \(version)") }
         let payload = try readObject(URL(fileURLWithPath: args[5]))
-        _ = try text(payload, "goal"); _ = try text(payload, "checkpoint"); _ = try text(payload, "status")
+        _ = try text(payload, "goal"); _ = try text(payload, "checkpoint"); _ = try text(payload, "status"); try validateChecklist(payload)
         record["status"] = payload; record["version"] = version + 1; record["updatedAt"] = ISO8601DateFormatter().string(from: Date()); projects[id] = record; try commit(); print("updated: \(id) version \(version + 1)"); return
     }
 

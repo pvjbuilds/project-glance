@@ -28,6 +28,12 @@ with tempfile.TemporaryDirectory() as tmp:
     bad.write_text(json.dumps({'goal':'only'}))
     call('update','demo','session2','3',bad,ok=False)
     call('enroll','other','request1','session1',payload,ok=False)
+    valid = {'goal':'Goal','checkpoint':'Checkpoint','status':'Active','checklist':[{'id':'one','title':'Done milestone','done':True},{'id':'two','title':'Open milestone','done':False}]}
+    payload.write_text(json.dumps(valid)); call('update','demo','session2','3',payload)
+    current=json.loads(call('list').stdout)['projects']['demo']; assert current['version']==4 and current['status']['checklist']==valid['checklist']
+    for bad in ([{'id':'one','title':'Missing done'}], [{'id':'one','title':'Not boolean','done':1}], [{'id':'one','title':'Not boolean','done':'true'}], [{'id':'one','title':'A','done':True},{'id':'one','title':'B','done':False}], 'invalid'):
+        valid['checklist']=bad; payload.write_text(json.dumps(valid)); call('update','demo','session2','4',payload,ok=False)
+    assert json.loads(call('list').stdout)['projects']['demo']['version']==4
     store = json.loads((root/'store.json').read_text())
     store['projects']['demo']['sessions'] = 'malformed'
     (root/'store.json').write_text(json.dumps(store))

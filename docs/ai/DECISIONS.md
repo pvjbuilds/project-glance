@@ -14,3 +14,6 @@ Codex proposes a dependency-free native macOS viewer with a local shared updater
 | A1 | A nonactivating panel can provide usable selection without stealing focus. | Core interaction requires revision. | Proposed 2026-11-02 | Unverified | Writer | Build and test in a real desktop session. |
 | A2 | File coordination and atomic replacement can provide safe cross-process version checks. | Concurrent updates could be lost. | Proposed 2026-11-02 | Unverified | Writer | Design review and concurrent process tests. |
 | A3 | Wake and file watching refresh state reliably across changed records and missing directories. | Stale displays could mislead. | Proposed 2026-11-02 | Unverified | Writer | Exercise lifecycle and recovery; show freshness. |
+
+## 2026-11-05: Menu-bar presentation
+Praj selected a dark rounded menu-bar popover using a screenshot reference, superseding the floating card as the primary interface. Saved milestones are displayed as a read-only checklist; status is never inferred from prose. Product name remains provisional. Cross-provider review of this revision is pending.
