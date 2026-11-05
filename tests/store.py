@@ -34,6 +34,26 @@ with tempfile.TemporaryDirectory() as tmp:
     for bad in ([{'id':'one','title':'Missing done'}], [{'id':'one','title':'Not boolean','done':1}], [{'id':'one','title':'Not boolean','done':'true'}], [{'id':'one','title':'A','done':True},{'id':'one','title':'B','done':False}], 'invalid'):
         valid['checklist']=bad; payload.write_text(json.dumps(valid)); call('update','demo','session2','4',payload,ok=False)
     assert json.loads(call('list').stdout)['projects']['demo']['version']==4
+    nested = {'goal':'Goal','checkpoint':'Checkpoint','status':'Active','currentMilestoneID':'child', 'tokenUsage':{'estimate':240000,'scope':'linked-chat','source':'Example','coverage':'Linked chat only'}, 'checklist':[{'id':'parent','title':'Parent','done':False,'children':[{'id':'child','title':'Child','done':False},{'id':'complete','title':'Done','done':True,'tokenUsage':{'estimate':1000,'source':'Example','coverage':'Single task'}}]}]}
+    payload.write_text(json.dumps(nested)); call('update','demo','session2','4',payload)
+    stored=json.loads(call('list').stdout)['projects']['demo']; assert stored['version']==5 and stored['status']==nested
+    def reject(obj):
+        payload.write_text(json.dumps(obj)); call('update','demo','session2','5',payload,ok=False)
+    import copy
+    for value in [True, -1, 1.5, '12', None]:
+        bad=copy.deepcopy(nested); bad['tokenUsage']['estimate']=value; reject(bad)
+    for field in ('source','coverage'):
+        bad=copy.deepcopy(nested); bad['tokenUsage'][field]=' '; reject(bad)
+    bad=copy.deepcopy(nested); bad['tokenUsage']['scope']='task'; reject(bad)
+    bad=copy.deepcopy(nested); bad['checklist'][0]['children'][1]['tokenUsage']['scope']='linked-chat'; reject(bad)
+    bad=copy.deepcopy(nested); bad['currentMilestoneID']='complete'; reject(bad)
+    bad=copy.deepcopy(nested); bad['currentMilestoneID']='missing'; reject(bad)
+    bad=copy.deepcopy(nested); bad['checklist'][0]['done']=True; reject(bad)
+    bad=copy.deepcopy(nested); bad['checklist'][0]['children'][0]['id']='parent'; reject(bad)
+    bad=copy.deepcopy(nested); bad['checklist'][0]['children']='invalid'; reject(bad)
+    bad=copy.deepcopy(nested); x=bad['checklist'][0]['children'][0]; x['children']=[{'id':'c','title':'C','done':False,'children':[{'id':'d','title':'D','done':False,'children':[{'id':'e','title':'E','done':False}]}]}]; reject(bad)
+    bad=copy.deepcopy(nested); bad['checklist']=[{'id':'i'+str(i),'title':'item','done':False} for i in range(201)]; bad.pop('currentMilestoneID'); reject(bad)
+    assert json.loads(call('list').stdout)['projects']['demo']['version']==5
     store = json.loads((root/'store.json').read_text())
     store['projects']['demo']['sessions'] = 'malformed'
     (root/'store.json').write_text(json.dumps(store))

@@ -45,7 +45,7 @@ Use the macOS system font. The heading identifies the app; the state uses strong
 
 ## Layout
 
-The content view is 380 by 510 points with a fixed header and footer. Cards scroll between them. Long content must remain accessible without covering controls.
+The content view is 400 by 570 points with a fixed header and footer. Cards scroll between them. Long content must remain accessible without covering controls.
 
 ## Shapes
 
@@ -53,4 +53,4 @@ Inset cards use the card radius and a thin border. The native popover supplies t
 
 ## Components
 
-The picker identifies each project by name and stable ID. Milestones show a blue checked square only when stored completion is true; pending items use an empty square. Each is display-only with a checkbox accessibility role and value. Legacy and invalid data have explicit states. Settings and Quit use native buttons with SF Symbols.
+The picker identifies each project by name and stable ID. Nested milestone branches use keyboard-accessible disclosure controls and 14-point indentation per level. Completed milestone counts refer to top-level milestones only. Milestones show a blue checked square only when stored completion is true; pending items use an empty square. Each is display-only with a checkbox accessibility role and value. Legacy and invalid data have explicit states. Settings and Quit use native buttons with SF Symbols.

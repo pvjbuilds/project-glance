@@ -17,16 +17,33 @@ func save(_ object: [String: Any], _ url: URL) throws {
 func text(_ o: [String: Any], _ key: String) throws -> String {
     guard let value = o[key] as? String, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw StoreError("Missing field: \(key)") }; return value
 }
-func validateChecklist(_ payload: [String: Any]) throws {
-    guard let raw = payload["checklist"] else { return }
-    guard let items = raw as? [[String: Any]] else { throw StoreError("Invalid checklist: expected an array") }
-    var ids = Set<String>()
-    for item in items {
-        guard let id = item["id"] as? String, valid(id), ids.insert(id).inserted,
-              let title = item["title"] as? String, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              let done = item["done"] as? NSNumber, CFGetTypeID(done) == CFBooleanGetTypeID() else { throw StoreError("Invalid checklist item") }
-    }
+func validateUsage(_ raw: Any, scopes: Set<String>) throws {
+    guard let u = raw as? [String: Any], let n = u["estimate"] as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(), n.doubleValue.isFinite, n.doubleValue >= 0, n.doubleValue <= 9_007_199_254_740_991, n.doubleValue.rounded(.towardZero) == n.doubleValue else { throw StoreError("Invalid token estimate") }
+    guard try text(u, "source").count <= 2000, try text(u, "coverage").count <= 2000 else { throw StoreError("Usage metadata too long") }
+    if let scope = u["scope"] { guard let v = scope as? String, scopes.contains(v) else { throw StoreError("Invalid usage scope") } }
+    if let asOf = u["asOf"] { guard let v = asOf as? String, !v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw StoreError("Invalid usage date") } }
 }
+func validateChecklist(_ payload: [String: Any]) throws {
+    if let usage = payload["tokenUsage"] { try validateUsage(usage, scopes: ["project", "linked-chat"]) }
+    guard let raw = payload["checklist"] else { if payload["currentMilestoneID"] != nil { throw StoreError("Current milestone requires a checklist") }; return }
+    guard let items = raw as? [[String: Any]] else { throw StoreError("Invalid checklist: expected an array") }
+    var ids = Set<String>(), pending = Set<String>(), count = 0
+    func visit(_ nodes: [[String: Any]], _ depth: Int) throws {
+        guard depth <= 4 else { throw StoreError("Checklist is too deeply nested") }
+        for item in nodes {
+            count += 1; guard count <= 200 else { throw StoreError("Checklist has too many items") }
+            guard let id = item["id"] as? String, valid(id), ids.insert(id).inserted,
+                  let title = item["title"] as? String, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  let done = item["done"] as? NSNumber, CFGetTypeID(done) == CFBooleanGetTypeID() else { throw StoreError("Invalid checklist item") }
+            if !done.boolValue { pending.insert(id) }
+            if let usage = item["tokenUsage"] { try validateUsage(usage, scopes: ["task"]) }
+            if let rawChildren = item["children"] { guard let children = rawChildren as? [[String: Any]] else { throw StoreError("Invalid checklist children") }; if done.boolValue && children.contains(where: { ($0["done"] as? NSNumber)?.boolValue == false }) { throw StoreError("Completed item has pending child") }; if !children.isEmpty { try visit(children, depth + 1) } }
+        }
+    }
+    try visit(items, 1)
+    if let current = payload["currentMilestoneID"] { guard let id = current as? String, pending.contains(id) else { throw StoreError("Current milestone must identify a pending item") } }
+}
+
 func run() throws {
     var args = Array(CommandLine.arguments.dropFirst())
     var root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("ProjectOverview", isDirectory: true)

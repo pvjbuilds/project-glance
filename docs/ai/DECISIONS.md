@@ -20,3 +20,6 @@ Praj selected a dark rounded menu-bar popover using a screenshot reference, supe
 
 ## 2026-11-05: Review mode
 Praj chose to keep this review local, superseding `cross-provider` selected on 2026-11-02. The designated reviewer is a fresh Codex session; same-provider review shares the builder’s blind spots and is not cross-provider review. The historical 2 November cross-provider review remains recorded.
+
+## 2026-11-06: Nested milestones and scoped usage
+Praj requested a compact overview, explicit nested milestone disclosure and token estimates where evidence exists. Completion and the current branch are explicitly saved; usage is scoped and sourced rather than inferred or apportioned. The menu-bar item becomes a monochrome system symbol. Local review remains the selected review mode.
