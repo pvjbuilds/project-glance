@@ -1,8 +1,8 @@
 # Glance: local macOS menu-bar project status for AI-assisted work
 
-Glance is an early **0.2.1 alpha source build** for keeping a small set of explicitly enrolled projects visible in a macOS menu-bar popover. A person or an associated AI agent supplies each checkpoint; Glance does not discover projects or run a model.
+Glance is an early **0.2.2 alpha source build** for keeping a small set of explicitly enrolled projects visible in a macOS menu-bar popover. A person or an associated AI agent supplies each checkpoint; Glance does not discover projects or run a model.
 
-**New in 0.2.1 (7 November 2026):** A compact status board, explicit recovery and source-release checks.
+**New in 0.2.2 (7 November 2026):** Read-only listing works without write access to the store lock. Writes still require access to the store directory.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.png">
@@ -13,7 +13,7 @@ Glance is an early **0.2.1 alpha source build** for keeping a small set of expli
 
 *Glance with fictional example data.*
 
-[Architecture details](docs/ai/architecture.html) · [Changes in 0.2.1](CHANGELOG.md)
+[Architecture details](docs/ai/architecture.html) · [Changes in 0.2.2](CHANGELOG.md)
 
 ## Build and run from source
 
@@ -22,6 +22,7 @@ Requires macOS, Apple's Command Line Tools (including Swift), and Python 3 for t
 ```sh
 scripts/build.sh
 python3 tests/store.py
+python3 tests/read_only_store.py  # run as a non-root user
 python3 tests/improvements.py
 python3 tests/release_reliability.py
 scripts/show.sh

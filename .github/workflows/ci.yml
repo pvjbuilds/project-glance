@@ -15,6 +15,7 @@ jobs:
       - name: Non-UI checks
         run: |
           python3 tests/store.py
+          python3 tests/read_only_store.py
           python3 tests/improvements.py
           python3 tests/release_reliability.py
           python3 tests/show_launcher.py

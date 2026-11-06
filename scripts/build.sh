@@ -12,7 +12,7 @@ version=$(cat VERSION)
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict><key>CFBundleExecutable</key><string>ProjectOverview</string><key>CFBundleIdentifier</key><string>local.projectoverview.viewer</string><key>CFBundleName</key><string>Glance</string><key>CFBundleDisplayName</key><string>Glance</string><key>CFBundleShortVersionString</key><string>$version</string><key>CFBundleVersion</key><string>4</string><key>CFBundlePackageType</key><string>APPL</string><key>LSUIElement</key><true/><key>NSHighResolutionCapable</key><true/></dict></plist>
+<plist version="1.0"><dict><key>CFBundleExecutable</key><string>ProjectOverview</string><key>CFBundleIdentifier</key><string>local.projectoverview.viewer</string><key>CFBundleName</key><string>Glance</string><key>CFBundleDisplayName</key><string>Glance</string><key>CFBundleShortVersionString</key><string>$version</string><key>CFBundleVersion</key><string>5</string><key>CFBundlePackageType</key><string>APPL</string><key>LSUIElement</key><true/><key>NSHighResolutionCapable</key><true/></dict></plist>
 PLIST
 # Local ad-hoc signature stabilizes this build's identity; it is not notarization.
 codesign --force --deep --sign - "$app"

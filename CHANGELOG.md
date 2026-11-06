@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2 — source alpha
+
+- Read and validate the atomic primary snapshot without creating or writing a lock; writes remain serialized.
+- Report lock access failures and post-replacement uncertainty more precisely.
+
 ## 0.2.1 — source alpha
 
 - Native menu-bar status board for explicitly enrolled projects, with checkpoints, milestones, health and optional sourced details.

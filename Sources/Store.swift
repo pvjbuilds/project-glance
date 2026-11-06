@@ -12,6 +12,7 @@ func strictInteger(_ raw: Any?, max: Int = 9_007_199_254_740_990) -> Int? {
 }
 
 struct StoreError: Error, CustomStringConvertible { let description: String; init(_ s: String) { description = s } }
+var replacementOccurred = false
 let fm = FileManager.default
 func fail(_ s: String) -> Never { fputs("\(s)\n", stderr); exit(1) }
 func valid(_ s: String) -> Bool { !s.isEmpty && s.count <= 80 && s.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil }
@@ -40,10 +41,11 @@ func durableReplace(_ data: Data, _ url: URL) throws {
     }
     guard fsync(fd) == 0 else { throw StoreError("Cannot sync temporary store: errno \(errno)") }
     guard rename(temp, url.path) == 0 else { throw StoreError("Cannot replace store: errno \(errno)") }
+    replacementOccurred = true
     let dfd = open(dir.path, O_RDONLY)
-    guard dfd >= 0 else { throw StoreError("Cannot open store directory for sync: errno \(errno)") }
+    guard dfd >= 0 else { throw StoreError("Cannot sync store directory (errno \(errno))") }
     defer { close(dfd) }
-    guard fsync(dfd) == 0 else { throw StoreError("Cannot sync store directory: errno \(errno)") }
+    guard fsync(dfd) == 0 else { throw StoreError("Cannot sync store directory (errno \(errno))") }
 }
 func validateStore(_ store: [String: Any]) throws {
     guard let schema = strictInteger(store["schema"]), [1, 2].contains(schema), let projects = store["projects"] as? [String: [String: Any]] else { throw StoreError("Invalid store envelope") }
@@ -141,12 +143,27 @@ func run() throws {
     args.insert(root.path, at: 0)
     guard args.count >= 2 else { throw StoreError("Usage: glance-store [--store DIRECTORY] list | enroll ID REQUEST SESSION JSON | connect ID SESSION | update ID SESSION VERSION JSON") }
     let command = args[1]
+    let storeURL = root.appendingPathComponent("store.json")
+    // Atomic replacement means this reads one complete primary snapshot without
+    // opening or creating the writer lock. Never fall back to the backup.
+    if command == "list" {
+        guard args.count == 2 else { throw StoreError("Usage: list") }
+        guard fm.fileExists(atPath: storeURL.path) else { throw StoreError("Store does not exist: \(root.path)") }
+        var result = try readObject(storeURL)
+        try validateStore(result)
+        if strictInteger(result["schema"]) == 2, let generation = result["generation"] as? String,
+           var projects = result["projects"] as? [String: [String: Any]] {
+            for (id, var record) in projects { record["updateToken"] = generation + ":" + String(strictInteger(record["version"])!); projects[id] = record }
+            result["projects"] = projects
+        }
+        print(String(data: try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]), encoding: .utf8)!)
+        return
+    }
     if command == "enroll" { try fm.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]) }
     else if command != "recover" && !fm.fileExists(atPath: root.appendingPathComponent("store.json").path) { throw StoreError("Store does not exist: \(root.path)") }
     let lockPath = root.appendingPathComponent(".lock").path
-    let fd = open(lockPath, O_CREAT | O_RDWR, 0o600); guard fd >= 0 else { throw StoreError("Cannot open lock") }; defer { close(fd) }
+    let fd = open(lockPath, O_CREAT | O_RDWR, 0o600); guard fd >= 0 else { throw StoreError("Cannot open store lock at \(lockPath) (errno \(errno)); write access to store directory \(root.path) may require a host permission grant") }; defer { close(fd) }
     guard flock(fd, LOCK_EX) == 0 else { throw StoreError("Cannot lock store") }; defer { flock(fd, LOCK_UN) }
-    let storeURL = root.appendingPathComponent("store.json")
     if command == "recover" {
         guard args.count == 5, args[4] == "accept-data-loss" else { throw StoreError("Usage: recover BACKUP_SHA256 PRIMARY_SHA256_OR_missing accept-data-loss") }
         let backupURL = root.appendingPathComponent("store.backup.json")
@@ -173,15 +190,6 @@ func run() throws {
     var store: [String: Any] = fm.fileExists(atPath: storeURL.path) ? try readObject(storeURL) : ["schema": 1, "projects": [:]]
     try validateStore(store)
     guard let schema = strictInteger(store["schema"]), [1, 2].contains(schema), var projects = store["projects"] as? [String: [String: Any]] else { throw StoreError("Invalid store") }
-    if command == "list" {
-        var result = store
-        if schema == 2, let generation = store["generation"] as? String {
-            var listed = projects
-            for (id, var record) in listed { record["updateToken"] = generation + ":" + String(strictInteger(record["version"])!); listed[id] = record }
-            result["projects"] = listed
-        }
-        print(String(data: try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]), encoding: .utf8)!); return
-    }
     if command == "migrate" {
         guard args.count == 2, schema == 1 else { throw StoreError("Migration requires a schema-1 store") }
         store["schema"] = 2; store["generation"] = UUID().uuidString; try save(store, storeURL); print("migrated: generation-aware updates enabled; list for tokens"); return
@@ -221,4 +229,7 @@ func run() throws {
 
     throw StoreError("Unknown command")
 }
-do { try run() } catch { fail("Error: \(error). If a write was attempted, list and inspect saved state before retrying; its outcome may be uncertain.") }
+do { try run() } catch {
+    let guidance = replacementOccurred ? ". A store file was replaced; inspect primary and backup before retrying because the outcome may be uncertain" : ""
+    fail("Error: \(error)\(guidance)")
+}
