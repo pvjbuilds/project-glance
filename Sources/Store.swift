@@ -2,6 +2,14 @@ import Foundation
 import Darwin
 import CoreFoundation
 
+// JSON integers only; reject booleans, floating-point encodings and unsafe versions.
+func strictInteger(_ raw: Any?, max: Int = 9_007_199_254_740_990) -> Int? {
+    guard let n = raw as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(),
+          ["c", "s", "i", "l", "q", "C", "S", "I", "L", "Q"].contains(String(cString: n.objCType)),
+          let value = n as? Int, value >= 0, value <= max else { return nil }
+    return value
+}
+
 struct StoreError: Error, CustomStringConvertible { let description: String; init(_ s: String) { description = s } }
 let fm = FileManager.default
 func fail(_ s: String) -> Never { fputs("\(s)\n", stderr); exit(1) }
@@ -10,9 +18,55 @@ func readObject(_ url: URL) throws -> [String: Any] {
     let data = try Data(contentsOf: url)
     guard let o = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw StoreError("Invalid JSON object: \(url.lastPathComponent)") }; return o
 }
+// Each replacement is durable before the next step. This is not a transaction
+// across the backup and primary: a failed primary write may advance the backup.
+func durableReplace(_ data: Data, _ url: URL) throws {
+    let dir = url.deletingLastPathComponent()
+    var name = Array(dir.appendingPathComponent(".glance-XXXXXX").path.utf8CString)
+    let fd = mkstemp(&name)
+    guard fd >= 0 else { throw StoreError("Cannot create temporary store: errno \(errno)") }
+    let temp = String(cString: name)
+    defer { close(fd); unlink(temp) }
+    guard fchmod(fd, 0o600) == 0 else { throw StoreError("Cannot protect temporary store: errno \(errno)") }
+    try data.withUnsafeBytes { bytes in
+        var offset = 0
+        while offset < bytes.count {
+            let n = Darwin.write(fd, bytes.baseAddress!.advanced(by: offset), bytes.count - offset)
+            if n < 0 && errno == EINTR { continue }
+            guard n > 0 else { throw StoreError("Cannot write temporary store: errno \(errno)") }
+            offset += n
+        }
+    }
+    guard fsync(fd) == 0 else { throw StoreError("Cannot sync temporary store: errno \(errno)") }
+    guard rename(temp, url.path) == 0 else { throw StoreError("Cannot replace store: errno \(errno)") }
+    let dfd = open(dir.path, O_RDONLY)
+    guard dfd >= 0 else { throw StoreError("Cannot open store directory for sync: errno \(errno)") }
+    defer { close(dfd) }
+    guard fsync(dfd) == 0 else { throw StoreError("Cannot sync store directory: errno \(errno)") }
+}
+func validateStore(_ store: [String: Any]) throws {
+    guard strictInteger(store["schema"]) == 1, let projects = store["projects"] as? [String: [String: Any]] else { throw StoreError("Invalid store envelope") }
+    var requests = Set<String>()
+    for (id, record) in projects {
+        guard valid(id), record["id"] as? String == id, strictInteger(record["schema"]) == 1,
+              let request = record["request"] as? String, valid(request), requests.insert(request).inserted,
+              let version = strictInteger(record["version"]), version >= 1,
+              let sessions = record["sessions"] as? [String], !sessions.isEmpty, Set(sessions).count == sessions.count, sessions.allSatisfy(valid),
+              let status = record["status"] as? [String: Any] else { throw StoreError("Invalid project record: \(id)") }
+        _ = try text(status, "goal"); _ = try text(status, "checkpoint"); _ = try text(status, "status"); try validateChecklist(status)
+    }
+}
 func save(_ object: [String: Any], _ url: URL) throws {
+    try validateStore(object)
     let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
-    try data.write(to: url, options: .atomic)
+    // Preserve the exact validated predecessor, never an invalid primary.
+    if fm.fileExists(atPath: url.path) {
+        let prior = try Data(contentsOf: url)
+        guard let obj = try JSONSerialization.jsonObject(with: prior) as? [String: Any] else { throw StoreError("Invalid existing store") }
+        try validateStore(obj)
+        try durableReplace(prior, url.deletingLastPathComponent().appendingPathComponent("store.backup.json"))
+    }
+    try durableReplace(data, url)
 }
 func text(_ o: [String: Any], _ key: String) throws -> String {
     guard let value = o[key] as? String, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw StoreError("Missing field: \(key)") }; return value
@@ -60,8 +114,10 @@ func run() throws {
     let fd = open(lockPath, O_CREAT | O_RDWR, 0o600); guard fd >= 0 else { throw StoreError("Cannot open lock") }; defer { close(fd) }
     guard flock(fd, LOCK_EX) == 0 else { throw StoreError("Cannot lock store") }; defer { flock(fd, LOCK_UN) }
     let storeURL = root.appendingPathComponent("store.json")
+    if !fm.fileExists(atPath: storeURL.path) && fm.fileExists(atPath: root.appendingPathComponent("store.backup.json").path) { throw StoreError("Primary store missing; backup exists. Explicit recovery required") }
     var store: [String: Any] = fm.fileExists(atPath: storeURL.path) ? try readObject(storeURL) : ["schema": 1, "projects": [:]]
-    guard store["schema"] as? Int == 1, var projects = store["projects"] as? [String: [String: Any]] else { throw StoreError("Invalid store") }
+    try validateStore(store)
+    guard strictInteger(store["schema"]) == 1, var projects = store["projects"] as? [String: [String: Any]] else { throw StoreError("Invalid store") }
     if command == "list" { print(String(data: try JSONSerialization.data(withJSONObject: store, options: [.sortedKeys]), encoding: .utf8)!); return }
     guard args.count >= 3, valid(args[2]) else { throw StoreError("Invalid project ID") }
     let id = args[2]
@@ -80,7 +136,7 @@ func run() throws {
         try commit(); print("enrolled: \(id)"); return
     }
     guard var record = projects[id] else { throw StoreError("Project not enrolled") }
-    guard record["schema"] as? Int == 1, record["id"] as? String == id, let version = record["version"] as? Int, var sessions = record["sessions"] as? [String] else { throw StoreError("Invalid project record") }
+    guard strictInteger(record["schema"]) == 1, record["id"] as? String == id, let version = strictInteger(record["version"]), var sessions = record["sessions"] as? [String] else { throw StoreError("Invalid project record") }
     if command == "connect" {
         guard args.count == 4, valid(args[3]) else { throw StoreError("Usage: connect ID SESSION") }
         if !sessions.contains(args[3]) { sessions.append(args[3]); record["sessions"] = sessions; record["version"] = version + 1; projects[id] = record; try commit() }

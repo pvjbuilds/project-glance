@@ -1,5 +1,11 @@
 # Current state
 
+## Current release — 2026-11-06
+
+Version 0.1.0 build 1 is installed at `~/Applications/Glance.app`. The coordinating session verified the bundle against the built binaries and guide and verified its ad-hoc signature. Independent local source review passed after the numeric validation, launcher and Help fixes; same-provider blind spots apply. The final native UI harness passed with its success marker in the working desktop environment. The first global skill installation was rejected by automatic approval review before execution. After explicit authorization, the coordinating session installed and verified both Codex and Claude skill router files; fresh-session discovery checks passed for both routers. See [release review and footprint](reviews/2026-11-06-release-review.md). Isolated fresh Codex sessions enrolled one fixture and connected and updated it in a second session; a user-authorized Haiku session then connected and updated that same fixture. The live Glance record is version 9, with seven of eight top-level milestones complete and lifecycle checks remaining.
+
+The sections below preserve earlier checkpoints and their historical authorization and review status; where they differ, this current-release section supersedes them.
+
 As of 2026-11-06, Asia/Kolkata. Writer: Codex implementation agent; next reviewer: independent reviewer for later material changes. Canonical checkout is this folder; the local `master` branch has a private remote verified by the coordinating session; the 5 November refinement passed local source review within its stated scope.
 
 ## Objective and checkpoint
@@ -33,3 +39,11 @@ See [rendering validation](reviews/2026-11-05-render-validation.md) for capture 
 ## 2026-11-06 nested milestone refinement
 
 The candidate adds bounded nested checklist data, explicit current-branch expansion, per-project disclosure choices, optional scoped token estimates, a compact summary and a monochrome menu-bar icon. The coordinating session explicitly updated the sole live record to version 8: five of eight top-level milestones complete, with the current refinement branch and one pending user layout check. A fresh independent local Codex source/design review passed within scope after a picker-refresh fix; same-provider blind spots apply. See [review](reviews/2026-11-06-nested-review.md). The coordinating session launched the rebuilt default app with `--show` and verified the process; native visibility, menu-bar interaction and lifecycle behavior remain unverified. The version-8 content render is a local review artifact.
+
+## 2026-11-06 local release candidate and handoff
+
+The coordinating session authorized local release packaging, help and opt-in skill routers. Writer handoff: the earlier implementation agent stopped; the replacement Codex implementation agent integrated the staged artifacts. The app installer and two skill routers are prepared; this checkout change does not itself prove installation or skill discovery. The standalone guide is bundled with the app; sessions must be explicitly associated, and no discovery or history import is performed.
+
+The updater validates the envelope and writes a synced, byte-exact predecessor before a synced atomic primary replacement. The viewer may read that backup when no in-memory snapshot is available, clearly marking it unavailable; it never promotes it. Missing or invalid primaries cannot be silently replaced when a backup exists. There is no restore command: a safe restoration must also resolve version reuse. An error after rename has an uncertain outcome; inspect state before retry. The two replacements are not a transaction, and power loss has not been tested. Twelve isolated SIGKILL trials stopped test-only instrumented writers at four save boundaries; all retained valid primary and backup data, released the lock and accepted a subsequent update.
+
+Historical checkpoint: independent local review was pending at this point; the current release section records the subsequent pass. Same-provider blind spots remain. Login, sleep/wake, Spaces and actual power-loss behavior remain unverified.
