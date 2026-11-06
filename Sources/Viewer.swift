@@ -24,6 +24,23 @@ func health(_ data: [String: Any]) -> (String, String)? {
     let labels = ["moving":"Moving", "waiting-on-you":"Waiting on you", "blocked":"Blocked", "parked":"Parked", "needs-scoping":"Needs scoping", "checkpoint-complete":"Checkpoint complete"]
     guard let title = labels[state] else { return nil }; return (title, reason)
 }
+func validExtras(_ payload: [String: Any]) -> Bool {
+    func nonempty(_ raw: Any?) -> Bool { guard let s = raw as? String else { return false }; return !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && s.count <= 2000 }
+    if let raw = payload["checkpointClosure"] {
+        guard let v = raw as? [String: Any], let state = v["state"] as? String, ["open", "complete"].contains(state), nonempty(v["finishCondition"]) else { return false }
+        if state == "complete" && !nonempty(v["evidence"]) { return false }
+        if let evidence = v["evidence"], (!(evidence is String) || (evidence as! String).count > 2000) { return false }
+    }
+    if let raw = payload["effortRange"] {
+        guard let v = raw as? [String: Any], let min = strictInteger(v["min"]), let max = strictInteger(v["max"]), min <= max, let unit = v["unit"] as? String, ["minutes", "hours", "days"].contains(unit), nonempty(v["source"]), nonempty(v["coverage"]) else { return false }
+    }
+    if let raw = payload["externalWait"] { guard let v = raw as? [String: Any], nonempty(v["reason"]), nonempty(v["source"]) else { return false } }
+    if let raw = payload["recurring"] {
+        guard let v = raw as? [String: Any], nonempty(v["current"]), nonempty(v["source"]) else { return false }
+        for key in ["last", "next"] { if let value = v[key], !nonempty(value) { return false } }
+    }
+    return true
+}
 struct Milestone { let id: String; let title: String; let done: Bool; let children: [Milestone]; let tokens: TokenUsage? }
 enum Checklist { case items([Milestone]), missing, invalid }
 func checklist(_ data: [String: Any]) -> Checklist {
@@ -102,6 +119,7 @@ func detailGroups(_ title: String, _ value: String) -> NSStackView {
 final class TopClipView: NSClipView { override var isFlipped: Bool { true } }
 final class Overview: NSView {
     let headerHelp = NSButton(); let picker = NSPopUpButton(); let body = column(10); let scroll = NSScrollView(); let notice = label("", size: 11, color: .systemOrange)
+    var allProjectsMode = false
     var recoveredBackup = false; var helpMode = false; var onCopyPrompt: ((String) -> Void)?; var lastProjects: [String: [String: Any]] = [:]; var lastSelected: String?; var lastUnavailable = false; var lastSignature: Data?; var lastDisplayedID: String?; var freshnessLabel: NSTextField?
     var onSelect: ((String) -> Void)?; var onSettings: (() -> Void)?; var onQuit: (() -> Void)?; var onContext: (() -> Void)?
     init() {
@@ -126,7 +144,9 @@ final class Overview: NSView {
         ])
     }
     required init?(coder: NSCoder) { fatalError() }
-    @objc func selection() { if let id = picker.selectedItem?.representedObject as? String { onSelect?(id) } }
+    @objc func selection() { allProjectsMode = false; lastSignature = nil; if let id = picker.selectedItem?.representedObject as? String { onSelect?(id) } }
+    @objc func showAllProjects() { allProjectsMode = true; lastSignature = nil; render(projects: lastProjects, selected: lastSelected, unavailable: lastUnavailable) }
+    @objc func selectProject(_ sender: NSButton) { guard let id = sender.identifier?.rawValue else { return }; allProjectsMode = false; lastSignature = nil; if let onSelect { onSelect(id) } else { render(projects: lastProjects, selected: id, unavailable: lastUnavailable) } }
     @objc func settingsClicked() { onSettings?() }
     @objc func quitClicked() { onQuit?() }
     @objc func contextClicked() { onContext?() }
@@ -179,8 +199,20 @@ final class Overview: NSView {
         if let selectedID, let item = picker.itemArray.first(where: { $0.representedObject as? String == selectedID }) { picker.select(item) }
         notice.stringValue = recoveredBackup ? "Current data unavailable · showing previous backup" : (unavailable ? (projects.isEmpty ? "Saved data unavailable" : "Unavailable · showing last saved view") : "")
         body.arrangedSubviews.forEach { body.removeArrangedSubview($0); $0.removeFromSuperview() }; freshnessLabel = nil
+        if allProjectsMode && !ids.isEmpty {
+            for id in ids {
+                guard let data = projects[id]?["status"] as? [String: Any] else { continue }
+                let group = card(); let name = data["name"] as? String ?? id
+                let button = NSButton(title: name + " · " + id, target: self, action: #selector(selectProject(_:))); button.identifier = NSUserInterfaceItemIdentifier(id); group.addArrangedSubview(button)
+                addFull(label(data["checkpoint"] as? String ?? "Checkpoint unavailable", size: 12), to: group)
+                addFull(label(health(data)?.0 ?? "Health not recorded", size: 11, color: muted), to: group)
+                addFull(group, to: body)
+            }
+            return
+        }
         guard let id = selectedID, let record else { addFull(label(unavailable ? "Project status is unavailable." : "No projects enrolled.", color: muted), to: body); return }
         guard let data = record["status"] as? [String: Any], let goal = data["goal"] as? String, let checkpoint = data["checkpoint"] as? String, let status = data["status"] as? String else { addFull(label("Project status is invalid or unavailable.", color: .systemOrange), to: body); return }
+        let allButton = NSButton(title: "All projects", target: self, action: #selector(showAllProjects)); body.addArrangedSubview(allButton)
         let overview = card(); addFull(label(status, size: 13, weight: .semibold), to: overview)
         if let (state, reason) = health(data) {
             let badge = NSStackView(); badge.orientation = .horizontal; badge.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
@@ -191,13 +223,33 @@ final class Overview: NSView {
         addFull(fieldRow("Checkpoint", checkpoint), to: overview)
         addFull(fieldRow("Next", (data["next"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Not provided"), to: overview)
         addFull(fieldRow("Goal", goal), to: overview)
-        if let raw = data["tokenUsage"] { if let u = usage(raw, scopes: ["project", "linked-chat"], defaultScope: "project") { let prefix = u.scope == "linked-chat" ? "Linked chat · " : "Estimated project tokens · "; let line = label(prefix + tokensText(u) + (u.scope == "linked-chat" ? " · Project total not measured" : ""), size: 11, color: muted); line.toolTip = tokenDetails(u) + " · Coverage: " + u.coverage; line.setAccessibilityHelp(line.toolTip); addFull(line, to: overview) } else { addFull(label("Project usage unavailable · invalid data", size: 11, color: .systemOrange), to: overview) } } else { addFull(label("Project usage · Not measured", size: 11, color: muted), to: overview) }
+
         let detailed = UserDefaults.standard.bool(forKey: "glance.details." + id)
         let details = NSButton(title: detailed ? "Hide details" : "Details", target: self, action: #selector(toggleDetails(_:))); details.setButtonType(.toggle); details.state = detailed ? .on : .off; details.isBordered = false; details.image = NSImage(systemSymbolName: detailed ? "chevron.down" : "chevron.right", accessibilityDescription: nil); details.imagePosition = .imageLeading; details.setAccessibilityLabel(detailed ? "Hide project details" : "Show project details"); overview.addArrangedSubview(details)
         if detailed {
+        if let raw = data["tokenUsage"] { if let u = usage(raw, scopes: ["project", "linked-chat"], defaultScope: "project") { let prefix = u.scope == "linked-chat" ? "Linked chat · " : "Estimated project tokens · "; let line = label(prefix + tokensText(u) + (u.scope == "linked-chat" ? " · Project total not measured" : ""), size: 11, color: muted); line.toolTip = tokenDetails(u) + " · Coverage: " + u.coverage; line.setAccessibilityHelp(line.toolTip); addFull(line, to: overview) } else { addFull(label("Project usage unavailable · invalid data", size: 11, color: .systemOrange), to: overview) } } else { addFull(label("Project usage · Not measured", size: 11, color: muted), to: overview) }
             let savedAt = (record["updatedAt"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) == nil ? nil : $0 } ?? "Not recorded or invalid"
             addFull(detailRow("SAVED AT", savedAt), to: overview)
             addFull(detailGroups("SAVING SESSION ID", record["updatedBySession"] as? String ?? "Not recorded"), to: overview)
+            if let closure = data["checkpointClosure"] as? [String: Any] {
+                if let condition = closure["finishCondition"] as? String { addFull(detailGroups("FINISH CONDITION", condition), to: overview) }
+                if let evidence = closure["evidence"] as? String, closure["state"] as? String == "complete" { addFull(detailGroups("COMPLETION EVIDENCE", evidence), to: overview) }
+            }
+            if let range = data["effortRange"] as? [String: Any], let min = strictInteger(range["min"]), let max = strictInteger(range["max"]), min <= max, let unit = range["unit"] as? String, let source = range["source"] as? String, let coverage = range["coverage"] as? String {
+                addFull(detailRow("ACTIVE EFFORT", "\(min)–\(max) \(unit)"), to: overview)
+                addFull(detailGroups("EFFORT SOURCE", source), to: overview)
+                addFull(detailGroups("EFFORT COVERAGE", coverage), to: overview)
+            }
+            if let cycle = data["recurring"] as? [String: Any], let current = cycle["current"] as? String, let source = cycle["source"] as? String {
+                addFull(detailGroups("CURRENT CYCLE", current), to: overview)
+                addFull(detailGroups("LAST CYCLE", cycle["last"] as? String ?? "Not recorded"), to: overview)
+                addFull(detailGroups("NEXT CYCLE", cycle["next"] as? String ?? "Not recorded"), to: overview)
+                addFull(detailGroups("CYCLE SOURCE", source), to: overview)
+            }
+            if let wait = data["externalWait"] as? [String: Any], let reason = wait["reason"] as? String, let source = wait["source"] as? String {
+                addFull(detailGroups("EXTERNAL WAIT", reason), to: overview)
+                addFull(detailGroups("WAIT SOURCE", source), to: overview)
+            }
             if let effort = data["effort"] as? String, !effort.isEmpty { addFull(detailGroups("EFFORT", effort), to: overview) }
             if let raw = data["tokenUsage"], let u = usage(raw, scopes: ["project", "linked-chat"], defaultScope: "project") { addFull(detailGroups("COVERAGE", u.coverage), to: overview); addFull(detailGroups("SOURCE", u.source), to: overview); if let asOf = u.asOf { addFull(detailRow("AS OF", asOf), to: overview) } }
         }
@@ -209,7 +261,7 @@ final class Overview: NSView {
         case .invalid: addFull(label("Milestones unavailable · invalid data", color: .systemOrange), to: milestones)
         case .items(let items):
             if items.isEmpty { addFull(label("No milestones recorded", color: muted), to: milestones) }
-            else { addFull(label("\(items.filter(\.done).count) of \(items.count) milestones complete", size: 11, weight: .semibold, color: muted), to: milestones); addFull(label("Task tokens · Not measured unless shown", size: 10, color: muted), to: milestones) }
+            else { addFull(label("\(items.filter(\.done).count) of \(items.count) milestones complete", size: 11, weight: .semibold, color: muted), to: milestones); if detailed { addFull(label("Task tokens · Not measured unless shown", size: 10, color: muted), to: milestones) } }
             let defaults = defaultExpanded(items, current: data["currentMilestoneID"] as? String)
             let choices = UserDefaults.standard.dictionary(forKey: "glance.expansion." + id) as? [String: Bool] ?? [:]
             func addNode(_ item: Milestone, _ depth: Int) {
@@ -220,7 +272,7 @@ final class Overview: NSView {
                 else { let spacer = NSView(); spacer.widthAnchor.constraint(equalToConstant: 16).isActive = true; spacer.heightAnchor.constraint(equalToConstant: 1).isActive = true; row.addArrangedSubview(spacer) }
                 let symbol = NSImageView(); symbol.image = NSImage(systemSymbolName: item.done ? "checkmark.square.fill" : "square", accessibilityDescription: nil); symbol.contentTintColor = item.done ? .systemBlue : muted; symbol.widthAnchor.constraint(equalToConstant: 16).isActive = true; symbol.heightAnchor.constraint(equalToConstant: 17).isActive = true; symbol.setAccessibilityElement(true); symbol.setAccessibilityRole(.checkBox); symbol.setAccessibilityLabel(item.title + ", read only"); symbol.setAccessibilityValue(item.done ? 1 : 0); row.addArrangedSubview(symbol)
                 let texts = column(2); let isCurrent = (data["currentMilestoneID"] as? String) == item.id; let name = label(item.title + (isCurrent ? "  ·  Current" : ""), color: (item.done || isCurrent) ? .white : NSColor(white: 0.8, alpha: 1)); addFull(name, to: texts)
-                if item.done, let u = item.tokens { let detail = label("Estimated task tokens · " + tokensText(u) + " · " + u.coverage + " · " + tokenDetails(u), size: 10, color: muted); detail.toolTip = tokenDetails(u) + " · Coverage: " + u.coverage; detail.setAccessibilityHelp(detail.toolTip); addFull(detail, to: texts) }
+                if detailed, item.done, let u = item.tokens { let detail = label("Estimated task tokens · " + tokensText(u) + " · " + u.coverage + " · " + tokenDetails(u), size: 10, color: muted); detail.toolTip = tokenDetails(u) + " · Coverage: " + u.coverage; detail.setAccessibilityHelp(detail.toolTip); addFull(detail, to: texts) }
                 if !item.children.isEmpty && !isOpen { addFull(label("\(item.children.filter(\.done).count) of \(item.children.count) substeps complete", size: 10, color: muted), to: texts) }
                 row.addArrangedSubview(texts); texts.widthAnchor.constraint(equalTo: row.widthAnchor, constant: -CGFloat((depth == 0 ? 44 : 50) + depth * 14)).isActive = true; addFull(row, to: milestones)
                 if isOpen { for child in item.children { addNode(child, depth + 1) } }
@@ -267,13 +319,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     @objc func wake() { refresh(); watch() }
     func redraw() { overview.recoveredBackup = usingBackup; overview.render(projects: cached, selected: selected, unavailable: unavailable) }
     func readValidated(_ url: URL) -> [String: [String: Any]]? {
-        guard let bytes = try? Data(contentsOf: url), let obj = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any], strictInteger(obj["schema"]) == 1, let projects = obj["projects"] as? [String: [String: Any]] else { return nil }
+        guard let bytes = try? Data(contentsOf: url), let obj = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any], [1, 2].contains(strictInteger(obj["schema"]) ?? -1), let projects = obj["projects"] as? [String: [String: Any]] else { return nil }
+        if strictInteger(obj["schema"]) == 2 { guard let generation = obj["generation"] as? String, UUID(uuidString: generation) != nil else { return nil } }
         var requests = Set<String>()
         func validID(_ v: String) -> Bool { v.range(of: "^[A-Za-z0-9_-]{1,80}$", options: .regularExpression) != nil }
         for (id, record) in projects {
             guard validID(id), record["id"] as? String == id, strictInteger(record["schema"]) == 1, let request = record["request"] as? String, validID(request), requests.insert(request).inserted, let version = strictInteger(record["version"]), version >= 1, let sessions = record["sessions"] as? [String], !sessions.isEmpty, Set(sessions).count == sessions.count, sessions.allSatisfy(validID), let status = record["status"] as? [String: Any] else { return nil }
             for key in ["goal", "checkpoint", "status"] { guard let value = status[key] as? String, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil } }
             if case .invalid = checklist(status) { return nil }
+            guard validExtras(status) else { return nil }
             if status["health"] != nil && health(status) == nil { return nil }
             if let raw = record["updatedBySession"] { guard let updater = raw as? String, validID(updater), sessions.contains(updater) else { return nil } }
         }
@@ -300,7 +354,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
 func preview(_ path: String) {
     let app = NSApplication.shared; app.setActivationPolicy(.accessory)
-    let payload: [String: Any] = ["name":"Atlas", "goal":"Keep the project visible through clear checkpoints.", "checkpoint":"Connect participating sessions", "status":"Preview ready · integration next", "next":"Connect one assistant, then verify a saved update.", "effort":"Not yet calibrated", "tokenUsage":["estimate":240000, "scope":"linked-chat", "source":"Fictional example", "coverage":"Illustrative linked chat only"], "currentMilestoneID":"preview", "checklist": [
+    let payload: [String: Any] = ["name":"Atlas", "goal":"Keep the project visible through clear checkpoints.", "checkpoint":"Connect participating sessions", "status":"Review underway", "next":"Connect one assistant, then verify a saved update.", "effort":"Not yet calibrated", "tokenUsage":["estimate":240000, "scope":"linked-chat", "source":"Fictional example", "coverage":"Illustrative linked chat only"], "currentMilestoneID":"preview", "checklist": [
         ["id":"preview", "title":"Review the refined overview", "done":false, "children": [["id":"icon", "title":"Menu bar icon built", "done":true], ["id":"nested", "title":"Nested milestones built", "done":true], ["id":"usage", "title":"Token labels added", "done":true], ["id":"visual", "title":"Check the layout", "done":false]]],
         ["id":"scope", "title":"Agree scope", "done":true], ["id":"build", "title":"Build the first version", "done":true], ["id":"verify", "title":"Verify the core workflow", "done":true], ["id":"docs", "title":"Record the decisions", "done":true], ["id":"review", "title":"Complete local review", "done":true],
         ["id":"integration", "title":"Connect both assistants", "done":false, "children": [["id":"contract", "title":"Prepare shared contract", "done":true], ["id":"codex", "title":"Connect Codex", "done":false], ["id":"claude", "title":"Connect Claude", "done":false]]],
@@ -309,12 +363,15 @@ func preview(_ path: String) {
     let now = ISO8601DateFormatter().string(from: Date())
     let rec: [String: Any] = ["id":"demo", "status":payload, "updatedAt":now]
     func capture(_ name: String, _ projects: [String: [String: Any]], _ selected: String?, _ unavailable: Bool = false, bottom: Bool = false) {
+        let previousDetails = UserDefaults.standard.object(forKey: "glance.details.demo")
+        defer { if let previousDetails { UserDefaults.standard.set(previousDetails, forKey: "glance.details.demo") } else { UserDefaults.standard.removeObject(forKey: "glance.details.demo") } }
         let view = Overview(); let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false); window.title = "Glance fictional demo · visual self-test"; window.contentView = view
-        view.render(projects: projects, selected: selected, unavailable: unavailable); if name == "help" { view.openHelp() }; view.layoutSubtreeIfNeeded()
+        view.render(projects: projects, selected: selected, unavailable: unavailable); if name == "help" { view.openHelp() }; if name == "all-projects" { view.showAllProjects() }; if name == "details" || name == "details-bottom" || name == "details-middle" { UserDefaults.standard.set(true, forKey: "glance.details.demo"); view.lastSignature = nil; view.render(projects: projects, selected: selected, unavailable: unavailable) }; view.layoutSubtreeIfNeeded()
         if bottom { let distance = view.body.frame.height - view.scroll.contentSize.height; guard distance > 0 else { fputs("Long fixture did not create scrollable content\n", stderr); exit(2) }; view.scroll.contentView.scroll(to: NSPoint(x: 0, y: distance)); view.scroll.reflectScrolledClipView(view.scroll.contentView) }
+        if name == "details-middle" { let distance = max(0, view.body.frame.height - view.scroll.contentSize.height); view.scroll.contentView.scroll(to: NSPoint(x: 0, y: distance * 0.45)); view.scroll.reflectScrolledClipView(view.scroll.contentView) }
         window.orderFront(nil); window.display(); RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.25)); view.displayIfNeeded()
         for scale in [1,2] { let rect = view.bounds; guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(rect.width)*scale, pixelsHigh: Int(rect.height)*scale, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { continue }; rep.size = rect.size
-            if name == "empty" { view.cacheDisplay(in: rect, to: rep) } else if let ctx = NSGraphicsContext(bitmapImageRep: rep) { NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = ctx; view.layer?.render(in: ctx.cgContext); NSGraphicsContext.restoreGraphicsState() }
+            view.cacheDisplay(in: rect, to: rep)
             if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: "\(path)/\(name)-\(scale)x.png")) } }
         window.orderOut(nil)
     }
@@ -322,6 +379,15 @@ func preview(_ path: String) {
     if caseName == nil || caseName == "overview" { capture("overview", ["demo":rec], "demo") }
     var healthPayload = payload; healthPayload["health"] = ["state":"waiting-on-you", "reason":"Review the proposed scope before work continues."]
     if caseName == nil || caseName == "health" { capture("health", ["demo":["id":"demo", "status":healthPayload, "updatedAt":now, "updatedBySession":"codex-example"]], "demo") }
+    var second = healthPayload; second["name"] = "Fictional second project"; second["checkpoint"] = "Await a review decision"
+    if caseName == nil || caseName == "all-projects" { capture("all-projects", ["demo":rec, "second":["id":"second", "status":second, "updatedAt":now]], "demo") }
+    healthPayload["checkpointClosure"] = ["state":"complete", "finishCondition":"Review passes", "evidence":"Reviewer recorded a pass"]
+    healthPayload["effortRange"] = ["min":2, "max":4, "unit":"hours", "source":"Example estimate", "coverage":"This checkpoint"]
+    healthPayload["externalWait"] = ["reason":"Waiting for review", "source":"Example request"]
+    healthPayload["recurring"] = ["current":"November", "last":"October complete", "next":"December", "source":"Example schedule"]
+    if caseName == nil || caseName == "details" { capture("details", ["demo":["id":"demo", "status":healthPayload, "updatedAt":now, "updatedBySession":"codex-example"]], "demo") }
+    if caseName == nil || caseName == "details-middle" { capture("details-middle", ["demo":["id":"demo", "status":healthPayload, "updatedAt":now, "updatedBySession":"codex-example"]], "demo") }
+    if caseName == nil || caseName == "details-bottom" { capture("details-bottom", ["demo":["id":"demo", "status":healthPayload, "updatedAt":now, "updatedBySession":"codex-example"]], "demo", bottom: true) }
     var legacy = payload; legacy.removeValue(forKey: "checklist"); legacy.removeValue(forKey: "currentMilestoneID"); if caseName == nil || caseName == "legacy" { capture("legacy", ["demo":["id":"demo", "status":legacy, "updatedAt":now]], "demo") }
     if caseName == nil || caseName == "empty" { capture("empty", [:], nil) }
     if caseName == "help" { capture("help", [:], nil) }

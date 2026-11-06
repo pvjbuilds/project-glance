@@ -1,6 +1,7 @@
 import Foundation
 import Darwin
 import CoreFoundation
+import CryptoKit
 
 // JSON integers only; reject booleans, floating-point encodings and unsafe versions.
 func strictInteger(_ raw: Any?, max: Int = 9_007_199_254_740_990) -> Int? {
@@ -45,7 +46,8 @@ func durableReplace(_ data: Data, _ url: URL) throws {
     guard fsync(dfd) == 0 else { throw StoreError("Cannot sync store directory: errno \(errno)") }
 }
 func validateStore(_ store: [String: Any]) throws {
-    guard strictInteger(store["schema"]) == 1, let projects = store["projects"] as? [String: [String: Any]] else { throw StoreError("Invalid store envelope") }
+    guard let schema = strictInteger(store["schema"]), [1, 2].contains(schema), let projects = store["projects"] as? [String: [String: Any]] else { throw StoreError("Invalid store envelope") }
+    if schema == 2 { guard let generation = store["generation"] as? String, UUID(uuidString: generation) != nil else { throw StoreError("Invalid store generation") } }
     var requests = Set<String>()
     for (id, record) in projects {
         guard valid(id), record["id"] as? String == id, strictInteger(record["schema"]) == 1,
@@ -84,7 +86,30 @@ func validateHealth(_ payload: [String: Any]) throws {
           ["moving", "waiting-on-you", "blocked", "parked", "needs-scoping", "checkpoint-complete"].contains(state),
           let reason = health["reason"] as? String, !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, reason.count <= 2000 else { throw StoreError("Invalid health: supply a supported state and nonempty reason (up to 2000 characters)") }
 }
+func validateExtras(_ payload: [String: Any]) throws {
+    if let raw = payload["externalWait"] {
+        guard let v = raw as? [String: Any] else { throw StoreError("Invalid external wait") }
+        for key in ["reason", "source"] { guard let value = v[key] as? String, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, value.count <= 2000 else { throw StoreError("External wait needs reason and source") } }
+    }
+    if let raw = payload["recurring"] {
+        guard let v = raw as? [String: Any] else { throw StoreError("Invalid recurring cycle") }
+        for key in ["current", "source"] { guard let value = v[key] as? String, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, value.count <= 2000 else { throw StoreError("Recurring cycle needs current and source") } }
+        for key in ["last", "next"] { if let value = v[key] { guard let text = value as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.count <= 2000 else { throw StoreError("Invalid recurring cycle field") } } }
+    }
+    if let raw = payload["effortRange"] {
+        guard let v = raw as? [String: Any], let min = strictInteger(v["min"]), let max = strictInteger(v["max"]), min <= max,
+              let unit = v["unit"] as? String, ["minutes", "hours", "days"].contains(unit),
+              let source = v["source"] as? String, !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let coverage = v["coverage"] as? String, !coverage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, source.count <= 2000, coverage.count <= 2000 else { throw StoreError("Invalid effort range") }
+    }
+    if let raw = payload["checkpointClosure"] {
+        guard let value = raw as? [String: Any], let state = value["state"] as? String, ["open", "complete"].contains(state), let condition = value["finishCondition"] as? String, !condition.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, condition.count <= 2000 else { throw StoreError("Invalid checkpoint closure") }
+        if state == "complete" { guard let evidence = value["evidence"] as? String, !evidence.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, evidence.count <= 2000 else { throw StoreError("Completed checkpoint needs evidence") } }
+        if let evidence = value["evidence"] { guard let evidence = evidence as? String, evidence.count <= 2000 else { throw StoreError("Invalid checkpoint evidence") } }
+    }
+}
 func validateChecklist(_ payload: [String: Any]) throws {
+    try validateExtras(payload)
     try validateHealth(payload)
     if let usage = payload["tokenUsage"] { try validateUsage(usage, scopes: ["project", "linked-chat"]) }
     guard let raw = payload["checklist"] else { if payload["currentMilestoneID"] != nil { throw StoreError("Current milestone requires a checklist") }; return }
@@ -117,16 +142,50 @@ func run() throws {
     guard args.count >= 2 else { throw StoreError("Usage: glance-store [--store DIRECTORY] list | enroll ID REQUEST SESSION JSON | connect ID SESSION | update ID SESSION VERSION JSON") }
     let command = args[1]
     if command == "enroll" { try fm.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]) }
-    else if !fm.fileExists(atPath: root.appendingPathComponent("store.json").path) { throw StoreError("Store does not exist: \(root.path)") }
+    else if command != "recover" && !fm.fileExists(atPath: root.appendingPathComponent("store.json").path) { throw StoreError("Store does not exist: \(root.path)") }
     let lockPath = root.appendingPathComponent(".lock").path
     let fd = open(lockPath, O_CREAT | O_RDWR, 0o600); guard fd >= 0 else { throw StoreError("Cannot open lock") }; defer { close(fd) }
     guard flock(fd, LOCK_EX) == 0 else { throw StoreError("Cannot lock store") }; defer { flock(fd, LOCK_UN) }
     let storeURL = root.appendingPathComponent("store.json")
+    if command == "recover" {
+        guard args.count == 5, args[4] == "accept-data-loss" else { throw StoreError("Usage: recover BACKUP_SHA256 PRIMARY_SHA256_OR_missing accept-data-loss") }
+        let backupURL = root.appendingPathComponent("store.backup.json")
+        let backupData = try Data(contentsOf: backupURL)
+        let digest: (Data) -> String = { SHA256.hash(data: $0).map { String(format: "%02x", $0) }.joined() }
+        guard digest(backupData) == args[2], let backup = try JSONSerialization.jsonObject(with: backupData) as? [String: Any] else { throw StoreError("Backup changed or invalid") }
+        try validateStore(backup)
+        let primaryData = fm.fileExists(atPath: storeURL.path) ? try Data(contentsOf: storeURL) : nil
+        guard primaryData.map(digest) ?? "missing" == args[3] else { throw StoreError("Primary changed; inspect again") }
+        if let primaryData {
+            if let object = try? JSONSerialization.jsonObject(with: primaryData) as? [String: Any], (try? validateStore(object)) != nil { throw StoreError("Primary is valid; recovery refused") }
+            let archive = root.appendingPathComponent("store.corrupt." + UUID().uuidString + ".json")
+            try durableReplace(primaryData, archive)
+            print("preserved corrupt primary: \(archive.path)")
+        }
+        var restored = backup; restored["schema"] = 2; restored["generation"] = UUID().uuidString
+        try validateStore(restored)
+        let bytes = try JSONSerialization.data(withJSONObject: restored, options: [.prettyPrinted, .sortedKeys])
+        try durableReplace(bytes, storeURL)
+        print("recovered backup \(args[2]); generation \(restored["generation"]!); later changes may be lost; list to verify")
+        return
+    }
     if !fm.fileExists(atPath: storeURL.path) && fm.fileExists(atPath: root.appendingPathComponent("store.backup.json").path) { throw StoreError("Primary store missing; backup exists. Explicit recovery required") }
     var store: [String: Any] = fm.fileExists(atPath: storeURL.path) ? try readObject(storeURL) : ["schema": 1, "projects": [:]]
     try validateStore(store)
-    guard strictInteger(store["schema"]) == 1, var projects = store["projects"] as? [String: [String: Any]] else { throw StoreError("Invalid store") }
-    if command == "list" { print(String(data: try JSONSerialization.data(withJSONObject: store, options: [.sortedKeys]), encoding: .utf8)!); return }
+    guard let schema = strictInteger(store["schema"]), [1, 2].contains(schema), var projects = store["projects"] as? [String: [String: Any]] else { throw StoreError("Invalid store") }
+    if command == "list" {
+        var result = store
+        if schema == 2, let generation = store["generation"] as? String {
+            var listed = projects
+            for (id, var record) in listed { record["updateToken"] = generation + ":" + String(strictInteger(record["version"])!); listed[id] = record }
+            result["projects"] = listed
+        }
+        print(String(data: try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]), encoding: .utf8)!); return
+    }
+    if command == "migrate" {
+        guard args.count == 2, schema == 1 else { throw StoreError("Migration requires a schema-1 store") }
+        store["schema"] = 2; store["generation"] = UUID().uuidString; try save(store, storeURL); print("migrated: generation-aware updates enabled; list for tokens"); return
+    }
     guard args.count >= 3, valid(args[2]) else { throw StoreError("Invalid project ID") }
     let id = args[2]
     func commit() throws { store["projects"] = projects; try save(store, storeURL) }
@@ -151,9 +210,10 @@ func run() throws {
         print("connected: \(id)"); return
     }
     if command == "update" {
-        guard args.count == 6, valid(args[3]), let expected = Int(args[4]) else { throw StoreError("Usage: update ID SESSION VERSION JSON") }
+        guard args.count == 6, valid(args[3]) else { throw StoreError("Usage: update ID SESSION VERSION JSON") }
         guard sessions.contains(args[3]) else { throw StoreError("Session is not associated; explicitly connect it before updating") }
-        guard expected == version else { throw StoreError("Version conflict: current version is \(version); list and reconcile before retrying") }
+        let expectedToken = schema == 2 ? (store["generation"] as! String) + ":" + String(version) : String(version)
+        guard args[4] == expectedToken else { throw StoreError("Version conflict: list and reconcile before retrying") }
         let payload = try readObject(URL(fileURLWithPath: args[5]))
         _ = try text(payload, "goal"); _ = try text(payload, "checkpoint"); _ = try text(payload, "status"); try validateChecklist(payload)
         record["status"] = payload; record["version"] = version + 1; record["updatedBySession"] = args[3]; record["updatedAt"] = ISO8601DateFormatter().string(from: Date()); projects[id] = record; try commit(); print("updated: \(id) version \(version + 1)"); return

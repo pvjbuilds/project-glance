@@ -11,19 +11,34 @@ func runNativeChecks() {
     precondition(view.picker.numberOfItems == 2 && view.picker.itemArray.map { $0.representedObject as? String } == ["a", "b"])
     precondition(has("Child marker") && has("Parent  ·  Current"), "current branch did not expand or identify current")
     precondition(has("Checkpoint") && has("Next") && has("Goal"), "field labels missing")
+    precondition(!has("Linked chat · ≈1.0K tokens · Project total not measured"), "usage displayed outside Details")
     precondition(view.scroll.scrollerStyle == .legacy && view.scroll.bounds.width - view.scroll.contentSize.width >= 10, "scroll gutter is not reserved")
+    guard let allProjects = descendants(view).compactMap({ $0 as? NSButton }).first(where: { $0.title == "All projects" }) else { fatalError("all projects action missing") }
+    allProjects.performClick(nil); precondition(has("Checkpoint A") && has("Checkpoint B"), "all projects did not show both checkpoints")
+    guard let projectButton = descendants(view.body).compactMap({ $0 as? NSButton }).first(where: { $0.identifier?.rawValue == "a" }) else { fatalError("project selection missing") }; projectButton.performClick(nil); precondition(has("Child marker"), "project selection did not open selected project")
     var copied = ""; view.onCopyPrompt = { copied = $0 }; view.openHelp()
     precondition(has("Using Glance"), "help did not open")
     guard let copy = descendants(view).compactMap({ $0 as? NSButton }).first(where: { $0.title == "Copy add-project prompt" }) else { fatalError("missing copy") }; copy.performClick(nil)
     precondition(copied.contains("Contents/Resources/AgentGuide.md") && copied.contains("Contents/MacOS/glance-store"), "copy prompt missing app paths")
     precondition(view.headerHelp.action == #selector(Overview.closeHelp), "header back unavailable"); view.headerHelp.performClick(nil); precondition(!view.helpMode && view.headerHelp.action == #selector(Overview.openHelp) && has("Child marker"), "header back did not restore overview")
 
-    guard let details = descendants(view).compactMap({ $0 as? NSButton }).first(where: { $0.title == "Details" }) else { fatalError("missing details") }; details.performClick(nil); precondition(has("Fixture coverage"), "details did not expose coverage")
+    guard let details = descendants(view).compactMap({ $0 as? NSButton }).first(where: { $0.title == "Details" }) else { fatalError("missing details") }; details.performClick(nil); precondition(has("Fixture coverage") && has("Linked chat · ≈1.0K tokens · Project total not measured"), "details did not expose usage and coverage")
 
     var healthProject = projectA; var healthStatus = healthProject["status"] as! [String: Any]; healthStatus["health"] = ["state":"waiting-on-you", "reason":"Awaiting a decision"]; healthProject["status"] = healthStatus; healthProject["updatedBySession"] = "codex-example"
     view.render(projects:["a":healthProject], selected:"a", unavailable:false)
     precondition(has("Waiting on you") && has("Awaiting a decision") && has("Last saved by: Codex session") && has("Saved health: Waiting on you · age above is time since save"), "health or saver presentation missing")
     precondition(has("codex-example"), "details did not expose session ID")
+    var features = projectA; var featureStatus = features["status"] as! [String: Any]
+    featureStatus["checkpointClosure"] = ["state":"complete", "finishCondition":"Pass review", "evidence":"Review passed"]
+    featureStatus["effortRange"] = ["min":2, "max":4, "unit":"hours", "source":"Prior work", "coverage":"Current checkpoint"]
+    featureStatus["recurring"] = ["current":"November", "last":"October complete", "next":"December", "source":"User"]
+    featureStatus["externalWait"] = ["reason":"Waiting for reviewer", "source":"Review request"]
+    features["status"] = featureStatus
+    view.render(projects:["a":features], selected:"a", unavailable:false)
+    precondition(has("Pass review") && has("Review passed"), "checkpoint closure details missing")
+    precondition(has("2–4 hours") && has("Prior work"), "effort range details missing")
+    precondition(has("November") && has("October complete") && has("December"), "recurring cycle details missing")
+    precondition(has("Waiting for reviewer") && has("Review request"), "external wait details missing")
     let priorScroll = view.scroll.contentView.bounds.origin
     var renamedB = projectB; var renamedStatus = renamedB["status"] as! [String: Any]; renamedStatus["name"] = "Renamed"; renamedB["status"] = renamedStatus
     view.render(projects:["a":projectA,"b":renamedB], selected:"a", unavailable:false)
@@ -55,6 +70,9 @@ func runNativeChecks() {
     precondition(delegate.usingBackup && delegate.unavailable && delegate.cached["a"] != nil, "valid backup not displayed"); precondition((try! Data(contentsOf: root.appendingPathComponent("store.json"))) == broken, "viewer changed corrupt primary")
     try! backup.write(to: root.appendingPathComponent("store.json")); delegate.wake()
     precondition(!delegate.unavailable && !delegate.usingBackup && delegate.cached["a"] != nil && delegate.watcher != nil, "simulated wake did not reload and attach watcher")
+    var corruptStatus = validRecord; var corruptFields = corruptStatus["status"] as! [String: Any]; corruptFields["checkpointClosure"] = ["state":"complete", "finishCondition":"No evidence"]; corruptStatus["status"] = corruptFields
+    try! JSONSerialization.data(withJSONObject: ["schema":2, "projects":["a":corruptStatus]]).write(to: root.appendingPathComponent("store.json"))
+    delegate.showPopover(); precondition(delegate.overview.notice.stringValue == "Unavailable · showing last saved view", "invalid record was displayed as available")
     let icon = delegate.status.button!.image!; precondition(icon.size.width > 0 && icon.size.width <= 20); print("Native checks passed: stable identity, current default, collapse, refresh, project switch, expansion, invalid/legacy and icon target/size.")
     window.orderOut(nil); NSStatusBar.system.removeStatusItem(delegate.status); testDefaults.removePersistentDomain(forName: testDomain)
 }
