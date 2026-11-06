@@ -54,6 +54,29 @@ with tempfile.TemporaryDirectory() as tmp:
     bad=copy.deepcopy(nested); x=bad['checklist'][0]['children'][0]; x['children']=[{'id':'c','title':'C','done':False,'children':[{'id':'d','title':'D','done':False,'children':[{'id':'e','title':'E','done':False}]}]}]; reject(bad)
     bad=copy.deepcopy(nested); bad['checklist']=[{'id':'i'+str(i),'title':'item','done':False} for i in range(201)]; bad.pop('currentMilestoneID'); reject(bad)
     assert json.loads(call('list').stdout)['projects']['demo']['version']==5
+    for state in ('moving','waiting-on-you','blocked','parked','needs-scoping','checkpoint-complete'):
+        health = copy.deepcopy(nested); health['health'] = {'state':state,'reason':'Explicitly recorded reason'}
+        payload.write_text(json.dumps(health))
+        version = json.loads(call('list').stdout)['projects']['demo']['version']
+        result = call('update','demo','session2',str(version),payload)
+        assert f'updated: demo version {version+1}' in result.stdout
+        saved = json.loads(call('list').stdout)['projects']['demo']
+        assert saved['status']['health'] == health['health'] and saved['updatedBySession'] == 'session2'
+    version = saved['version']
+    before_connect = saved.copy()
+    call('connect','demo','session3')
+    saved = json.loads(call('list').stdout)['projects']['demo']; version = saved['version']
+    assert saved['updatedAt'] == before_connect['updatedAt'] and saved['updatedBySession'] == before_connect['updatedBySession']
+    for invalid in (None, {}, {'state':'unknown','reason':'why'}, {'state':'parked','reason':' '}, {'state':'parked','reason':'x'*2001}):
+        invalid_payload = copy.deepcopy(nested); invalid_payload['health'] = invalid
+        payload.write_text(json.dumps(invalid_payload)); call('update','demo','session2',str(version),payload,ok=False)
+    assert json.loads(call('list').stdout)['projects']['demo']['version'] == version
+    # Older records remain valid without either optional field.
+    legacy = json.loads((root/'store.json').read_text()); legacy['projects']['demo'].pop('updatedBySession'); legacy['projects']['demo']['status'].pop('health')
+    (root/'store.json').write_text(json.dumps(legacy)); call('list')
+    invalid_updater = copy.deepcopy(legacy); invalid_updater['projects']['demo']['updatedBySession']='unassociated'
+    (root/'store.json').write_text(json.dumps(invalid_updater)); call('list',ok=False)
+    (root/'store.json').write_text(json.dumps(legacy))
     store = json.loads((root/'store.json').read_text())
     store['projects']['demo']['sessions'] = 'malformed'
     (root/'store.json').write_text(json.dumps(store))

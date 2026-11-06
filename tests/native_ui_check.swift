@@ -20,6 +20,10 @@ func runNativeChecks() {
 
     guard let details = descendants(view).compactMap({ $0 as? NSButton }).first(where: { $0.title == "Details" }) else { fatalError("missing details") }; details.performClick(nil); precondition(has("Fixture coverage"), "details did not expose coverage")
 
+    var healthProject = projectA; var healthStatus = healthProject["status"] as! [String: Any]; healthStatus["health"] = ["state":"waiting-on-you", "reason":"Awaiting a decision"]; healthProject["status"] = healthStatus; healthProject["updatedBySession"] = "codex-example"
+    view.render(projects:["a":healthProject], selected:"a", unavailable:false)
+    precondition(has("Waiting on you") && has("Awaiting a decision") && has("Last saved by: Codex session") && has("Saved health: Waiting on you · age above is time since save"), "health or saver presentation missing")
+    precondition(has("codex-example"), "details did not expose session ID")
     let priorScroll = view.scroll.contentView.bounds.origin
     var renamedB = projectB; var renamedStatus = renamedB["status"] as! [String: Any]; renamedStatus["name"] = "Renamed"; renamedB["status"] = renamedStatus
     view.render(projects:["a":projectA,"b":renamedB], selected:"a", unavailable:false)
@@ -49,6 +53,8 @@ func runNativeChecks() {
     try! backup.write(to: root.appendingPathComponent("store.backup.json"))
     let delegate = AppDelegate(); delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification)); precondition(delegate.status.length == NSStatusItem.squareLength && delegate.status.button?.image?.isTemplate == true && delegate.status.button?.action == #selector(AppDelegate.toggle) && delegate.status.button?.target === delegate)
     precondition(delegate.usingBackup && delegate.unavailable && delegate.cached["a"] != nil, "valid backup not displayed"); precondition((try! Data(contentsOf: root.appendingPathComponent("store.json"))) == broken, "viewer changed corrupt primary")
+    try! backup.write(to: root.appendingPathComponent("store.json")); delegate.wake()
+    precondition(!delegate.unavailable && !delegate.usingBackup && delegate.cached["a"] != nil && delegate.watcher != nil, "simulated wake did not reload and attach watcher")
     let icon = delegate.status.button!.image!; precondition(icon.size.width > 0 && icon.size.width <= 20); print("Native checks passed: stable identity, current default, collapse, refresh, project switch, expansion, invalid/legacy and icon target/size.")
     window.orderOut(nil); NSStatusBar.system.removeStatusItem(delegate.status); testDefaults.removePersistentDomain(forName: testDomain)
 }

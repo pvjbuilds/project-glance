@@ -17,11 +17,14 @@ Create a temporary UTF-8 JSON file with an evidence-backed project goal, current
   "checkpoint": "The initial version is ready for review",
   "status": "Review in progress",
   "next": "Resolve review findings",
+  "health": {"state": "moving", "reason": "The review is underway"},
   "checklist": [{"id":"review","title":"Complete review","done":false,"children":[{"id":"verify","title":"Verify behavior","done":false}]}],
   "currentMilestoneID": "verify",
   "tokenUsage": {"estimate": 12000, "scope": "linked-chat", "source": "Example usage metadata", "coverage": "Example chat only; project total not measured", "asOf": "2026-01-01"}
 }
 ```
+
+Health is optional and must be supported by the current checkpoint: `moving`, `waiting-on-you`, `blocked`, `parked`, `needs-scoping`, or `checkpoint-complete`. Supply a nonempty `reason` (up to 2000 characters). Do not infer health from age. Age still describes the last saved record, including a deliberate waiting or parked state. The updater records the associated session ID that last saved status; it is a coordination identifier, not proof of a person's identity. The display labels IDs beginning `codex-` or `claude-` by that prefix, not by verified provider identity; other IDs show Unknown assistant. The full ID is in Details. Older records may have no recorded saving session.
 
 The usage numbers above are illustrative, not real measurements. Omit `tokenUsage` unless supported by real evidence. It requires a nonnegative whole-number `estimate`, nonempty `source` and `coverage`; optional `scope` on the status is `project` or `linked-chat`, and optional `asOf` is a nonempty string. A task's optional usage has scope `task`. Do not split or allocate shared usage among tasks without evidence. Usage volume is not monetary cost. Optional string fields include `milestones`, `effort`, `sources` and `contextURL`; review content before saving.
 
@@ -40,4 +43,4 @@ GLANCE_STORE="$GLANCE_APP/Contents/MacOS/glance-store"
 "$GLANCE_STORE" list
 ```
 
-Choose either enrollment for a new explicitly requested project or connection for an existing project; do not blindly run every example. Read the current version after connect, then provide that exact version for update. A conflict means read again and reconcile before retrying; never blindly overwrite. After any write error, the outcome may be uncertain: list and read back before deciding whether to retry. Read back and confirm the ID, content, association and actual version. The updater rejects corrupt current data rather than silently writing from a backup. A viewer backup is a previous snapshot, not proof of the latest state; preserve the corrupt file and seek an explicit recovery decision.
+Choose either enrollment for a new explicitly requested project or connection for an existing project; do not blindly run every example. Read the current version after connect, then provide that exact version for update. A conflict means read again and reconcile before retrying; never blindly overwrite. After any write error, the outcome may be uncertain: list and read back before deciding whether to retry. A successful update prints the project ID and new version. Read back and confirm the ID, content, association and actual version before reporting it saved. The updater rejects corrupt current data rather than silently writing from a backup. A viewer backup is a previous snapshot, not proof of the latest state; preserve the corrupt file and seek an explicit recovery decision.

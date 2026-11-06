@@ -18,6 +18,12 @@ func usage(_ raw: Any, scopes: Set<String>, defaultScope: String) -> TokenUsage?
     let scope = obj["scope"] as? String ?? defaultScope; if obj["scope"] != nil && !(obj["scope"] is String) { return nil }; guard scopes.contains(scope) else { return nil }
     return TokenUsage(estimate: n.int64Value, source: source, coverage: coverage, asOf: obj["asOf"] as? String, scope: scope)
 }
+func health(_ data: [String: Any]) -> (String, String)? {
+    guard let h = data["health"] as? [String: Any], let state = h["state"] as? String,
+          let reason = h["reason"] as? String, !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, reason.count <= 2000 else { return nil }
+    let labels = ["moving":"Moving", "waiting-on-you":"Waiting on you", "blocked":"Blocked", "parked":"Parked", "needs-scoping":"Needs scoping", "checkpoint-complete":"Checkpoint complete"]
+    guard let title = labels[state] else { return nil }; return (title, reason)
+}
 struct Milestone { let id: String; let title: String; let done: Bool; let children: [Milestone]; let tokens: TokenUsage? }
 enum Checklist { case items([Milestone]), missing, invalid }
 func checklist(_ data: [String: Any]) -> Checklist {
@@ -176,6 +182,12 @@ final class Overview: NSView {
         guard let id = selectedID, let record else { addFull(label(unavailable ? "Project status is unavailable." : "No projects enrolled.", color: muted), to: body); return }
         guard let data = record["status"] as? [String: Any], let goal = data["goal"] as? String, let checkpoint = data["checkpoint"] as? String, let status = data["status"] as? String else { addFull(label("Project status is invalid or unavailable.", color: .systemOrange), to: body); return }
         let overview = card(); addFull(label(status, size: 13, weight: .semibold), to: overview)
+        if let (state, reason) = health(data) {
+            let badge = NSStackView(); badge.orientation = .horizontal; badge.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
+            badge.wantsLayer = true; badge.layer?.backgroundColor = NSColor(white: 1, alpha: 0.12).cgColor; badge.layer?.cornerRadius = 7
+            badge.addArrangedSubview(label(state, size: 11, weight: .semibold)); overview.addArrangedSubview(badge)
+            addFull(label(reason, size: 12), to: overview)
+        }
         addFull(fieldRow("Checkpoint", checkpoint), to: overview)
         addFull(fieldRow("Next", (data["next"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Not provided"), to: overview)
         addFull(fieldRow("Goal", goal), to: overview)
@@ -183,6 +195,9 @@ final class Overview: NSView {
         let detailed = UserDefaults.standard.bool(forKey: "glance.details." + id)
         let details = NSButton(title: detailed ? "Hide details" : "Details", target: self, action: #selector(toggleDetails(_:))); details.setButtonType(.toggle); details.state = detailed ? .on : .off; details.isBordered = false; details.image = NSImage(systemSymbolName: detailed ? "chevron.down" : "chevron.right", accessibilityDescription: nil); details.imagePosition = .imageLeading; details.setAccessibilityLabel(detailed ? "Hide project details" : "Show project details"); overview.addArrangedSubview(details)
         if detailed {
+            let savedAt = (record["updatedAt"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) == nil ? nil : $0 } ?? "Not recorded or invalid"
+            addFull(detailRow("SAVED AT", savedAt), to: overview)
+            addFull(detailGroups("SAVING SESSION ID", record["updatedBySession"] as? String ?? "Not recorded"), to: overview)
             if let effort = data["effort"] as? String, !effort.isEmpty { addFull(detailGroups("EFFORT", effort), to: overview) }
             if let raw = data["tokenUsage"], let u = usage(raw, scopes: ["project", "linked-chat"], defaultScope: "project") { addFull(detailGroups("COVERAGE", u.coverage), to: overview); addFull(detailGroups("SOURCE", u.source), to: overview); if let asOf = u.asOf { addFull(detailRow("AS OF", asOf), to: overview) } }
         }
@@ -214,6 +229,16 @@ final class Overview: NSView {
         }
         addFull(milestones, to: body)
         let fresh = label(freshness(record), size: 11, color: muted); freshnessLabel = fresh; addFull(fresh, to: body)
+        if let state = (data["health"] as? [String: Any])?["state"] as? String, state == "waiting-on-you" || state == "parked" {
+            addFull(label("Saved health: \(state == "parked" ? "Parked" : "Waiting on you") · age above is time since save", size: 11, color: muted), to: body)
+        }
+        let saver: String
+        if let session = record["updatedBySession"] as? String {
+            if session.hasPrefix("codex-") { saver = "Codex session" }
+            else if session.hasPrefix("claude-") { saver = "Claude session" }
+            else { saver = "Unknown assistant" }
+        } else { saver = "Not recorded" }
+        addFull(label("Last saved by: " + saver, size: 11, color: muted), to: body)
         layoutSubtreeIfNeeded(); if preserve { scroll.contentView.scroll(to: previousOffset); scroll.reflectScrolledClipView(scroll.contentView) }
 
     }
@@ -249,6 +274,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             guard validID(id), record["id"] as? String == id, strictInteger(record["schema"]) == 1, let request = record["request"] as? String, validID(request), requests.insert(request).inserted, let version = strictInteger(record["version"]), version >= 1, let sessions = record["sessions"] as? [String], !sessions.isEmpty, Set(sessions).count == sessions.count, sessions.allSatisfy(validID), let status = record["status"] as? [String: Any] else { return nil }
             for key in ["goal", "checkpoint", "status"] { guard let value = status[key] as? String, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil } }
             if case .invalid = checklist(status) { return nil }
+            if status["health"] != nil && health(status) == nil { return nil }
+            if let raw = record["updatedBySession"] { guard let updater = raw as? String, validID(updater), sessions.contains(updater) else { return nil } }
         }
         return projects
     }
@@ -293,6 +320,8 @@ func preview(_ path: String) {
     }
     let caseName = CommandLine.arguments.firstIndex(of: "--case").flatMap { $0 + 1 < CommandLine.arguments.count ? CommandLine.arguments[$0 + 1] : nil }
     if caseName == nil || caseName == "overview" { capture("overview", ["demo":rec], "demo") }
+    var healthPayload = payload; healthPayload["health"] = ["state":"waiting-on-you", "reason":"Review the proposed scope before work continues."]
+    if caseName == nil || caseName == "health" { capture("health", ["demo":["id":"demo", "status":healthPayload, "updatedAt":now, "updatedBySession":"codex-example"]], "demo") }
     var legacy = payload; legacy.removeValue(forKey: "checklist"); legacy.removeValue(forKey: "currentMilestoneID"); if caseName == nil || caseName == "legacy" { capture("legacy", ["demo":["id":"demo", "status":legacy, "updatedAt":now]], "demo") }
     if caseName == nil || caseName == "empty" { capture("empty", [:], nil) }
     if caseName == "help" { capture("help", [:], nil) }

@@ -54,6 +54,7 @@ func validateStore(_ store: [String: Any]) throws {
               let sessions = record["sessions"] as? [String], !sessions.isEmpty, Set(sessions).count == sessions.count, sessions.allSatisfy(valid),
               let status = record["status"] as? [String: Any] else { throw StoreError("Invalid project record: \(id)") }
         _ = try text(status, "goal"); _ = try text(status, "checkpoint"); _ = try text(status, "status"); try validateChecklist(status)
+        if let updater = record["updatedBySession"] { guard let updater = updater as? String, valid(updater), sessions.contains(updater) else { throw StoreError("Invalid updater session: \(id)") } }
     }
 }
 func save(_ object: [String: Any], _ url: URL) throws {
@@ -77,7 +78,14 @@ func validateUsage(_ raw: Any, scopes: Set<String>) throws {
     if let scope = u["scope"] { guard let v = scope as? String, scopes.contains(v) else { throw StoreError("Invalid usage scope") } }
     if let asOf = u["asOf"] { guard let v = asOf as? String, !v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw StoreError("Invalid usage date") } }
 }
+func validateHealth(_ payload: [String: Any]) throws {
+    guard let raw = payload["health"] else { return }
+    guard let health = raw as? [String: Any], let state = health["state"] as? String,
+          ["moving", "waiting-on-you", "blocked", "parked", "needs-scoping", "checkpoint-complete"].contains(state),
+          let reason = health["reason"] as? String, !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, reason.count <= 2000 else { throw StoreError("Invalid health: supply a supported state and nonempty reason (up to 2000 characters)") }
+}
 func validateChecklist(_ payload: [String: Any]) throws {
+    try validateHealth(payload)
     if let usage = payload["tokenUsage"] { try validateUsage(usage, scopes: ["project", "linked-chat"]) }
     guard let raw = payload["checklist"] else { if payload["currentMilestoneID"] != nil { throw StoreError("Current milestone requires a checklist") }; return }
     guard let items = raw as? [[String: Any]] else { throw StoreError("Invalid checklist: expected an array") }
@@ -132,7 +140,7 @@ func run() throws {
         guard !projects.values.contains(where: { $0["request"] as? String == request }) else { throw StoreError("Request ID already belongs to another project") }
         let payload = try readObject(URL(fileURLWithPath: args[5]))
         _ = try text(payload, "goal"); _ = try text(payload, "checkpoint"); _ = try text(payload, "status"); try validateChecklist(payload)
-        projects[id] = ["schema": 1, "id": id, "request": request, "version": 1, "sessions": [session], "updatedAt": ISO8601DateFormatter().string(from: Date()), "status": payload]
+        projects[id] = ["schema": 1, "id": id, "request": request, "version": 1, "sessions": [session], "updatedAt": ISO8601DateFormatter().string(from: Date()), "updatedBySession": session, "status": payload]
         try commit(); print("enrolled: \(id)"); return
     }
     guard var record = projects[id] else { throw StoreError("Project not enrolled") }
@@ -144,13 +152,13 @@ func run() throws {
     }
     if command == "update" {
         guard args.count == 6, valid(args[3]), let expected = Int(args[4]) else { throw StoreError("Usage: update ID SESSION VERSION JSON") }
-        guard sessions.contains(args[3]) else { throw StoreError("Session is not associated") }
-        guard expected == version else { throw StoreError("Version conflict: current version is \(version)") }
+        guard sessions.contains(args[3]) else { throw StoreError("Session is not associated; explicitly connect it before updating") }
+        guard expected == version else { throw StoreError("Version conflict: current version is \(version); list and reconcile before retrying") }
         let payload = try readObject(URL(fileURLWithPath: args[5]))
         _ = try text(payload, "goal"); _ = try text(payload, "checkpoint"); _ = try text(payload, "status"); try validateChecklist(payload)
-        record["status"] = payload; record["version"] = version + 1; record["updatedAt"] = ISO8601DateFormatter().string(from: Date()); projects[id] = record; try commit(); print("updated: \(id) version \(version + 1)"); return
+        record["status"] = payload; record["version"] = version + 1; record["updatedBySession"] = args[3]; record["updatedAt"] = ISO8601DateFormatter().string(from: Date()); projects[id] = record; try commit(); print("updated: \(id) version \(version + 1)"); return
     }
 
     throw StoreError("Unknown command")
 }
-do { try run() } catch { fail("Error: \(error)") }
+do { try run() } catch { fail("Error: \(error). If a write was attempted, list and inspect saved state before retrying; its outcome may be uncertain.") }
