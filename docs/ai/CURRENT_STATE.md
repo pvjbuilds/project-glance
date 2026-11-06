@@ -1,3 +1,7 @@
+## Coordinating verification — Glance 0.2.0 installed
+
+Installed version 0.2.0 build3 at ~/Applications/Glance.app. Parent verified installed app/updater/guide SHA equality to reviewed build and ad-hoc signature; refreshed both existing managed skill routers. Isolated installed executable launch and saved updater readback passed; this is process/CLI evidence, not packaged visual reload. Seven native UI RED/GREEN cycles passed in working desktop; corrected cacheDisplay captures visibly preserve fixed header/footer and readable effort/cycle/wait details. Independent solo:codex review passed within scope, accepted same-provider blind spots. Live record readback: one project, version12, nine of ten improvement items complete, item1 physical acceptance pending. Schema remains1; no live migration/recovery. Explicit open request succeeded.
+
 # Current state
 
 ## Current release — 2026-11-06
