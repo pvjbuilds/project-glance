@@ -23,3 +23,6 @@ Praj chose to keep this review local, superseding `cross-provider` selected on 2
 
 ## 2026-11-06: Nested milestones and scoped usage
 Praj requested a compact overview, explicit nested milestone disclosure and token estimates where evidence exists. Completion and the current branch are explicitly saved; usage is scoped and sourced rather than inferred or apportioned. The menu-bar item becomes a monochrome system symbol. Local review remains the selected review mode.
+
+## 2026-11-07: Compact status board
+Praj selected visual direction 3 (Status board), with reduced whitespace following his wife's feedback. Native aligned label/value rows, flat sections and semantic accents supersede the earlier card presentation. Retain full supplied text and technical metadata through disclosures; do not invent short summaries.

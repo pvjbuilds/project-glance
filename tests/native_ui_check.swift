@@ -10,7 +10,8 @@ func runNativeChecks() {
     view.render(projects:["a":projectA,"b":projectB], selected:"a", unavailable:false); view.layoutSubtreeIfNeeded(); window.orderFront(nil); window.display(); RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.2))
     precondition(view.picker.numberOfItems == 2 && view.picker.itemArray.map { $0.representedObject as? String } == ["a", "b"])
     precondition(has("Child marker") && has("Parent  ·  Current"), "current branch did not expand or identify current")
-    precondition(has("Checkpoint") && has("Next") && has("Goal"), "field labels missing")
+    precondition(has("Checkpoint") && has("Next"), "field labels missing")
+    precondition(has("Progress") && has("0 of 1 milestones"), "compact status board missing milestone progress")
     precondition(!has("Linked chat · ≈1.0K tokens · Project total not measured"), "usage displayed outside Details")
     precondition(view.scroll.scrollerStyle == .legacy && view.scroll.bounds.width - view.scroll.contentSize.width >= 10, "scroll gutter is not reserved")
     guard let allProjects = descendants(view).compactMap({ $0 as? NSButton }).first(where: { $0.title == "All projects" }) else { fatalError("all projects action missing") }
@@ -26,8 +27,10 @@ func runNativeChecks() {
 
     var healthProject = projectA; var healthStatus = healthProject["status"] as! [String: Any]; healthStatus["health"] = ["state":"waiting-on-you", "reason":"Awaiting a decision"]; healthProject["status"] = healthStatus; healthProject["updatedBySession"] = "codex-example"
     view.render(projects:["a":healthProject], selected:"a", unavailable:false)
-    precondition(has("Waiting on you") && has("Awaiting a decision") && has("Last saved by: Codex session") && has("Saved health: Waiting on you · age above is time since save"), "health or saver presentation missing")
-    precondition(has("codex-example"), "details did not expose session ID")
+    precondition(has("Waiting on you") && has("Awaiting a decision") && view.freshnessLabel!.stringValue.contains(" · Codex") && !has("Saved health: Waiting on you · age above is time since save"), "health or saver presentation missing")
+    precondition(!view.freshnessLabel!.stringValue.contains("2026-11-06T00:00:00Z") && !has("codex-example") && has("Goal"), "friendly saved time or goal missing")
+    guard let technical = descendants(view).compactMap({ $0 as? NSButton }).first(where: { $0.title == "Technical details" }) else { fatalError("technical details missing") }; technical.performClick(nil)
+    precondition(has("2026-11-06T00:00:00Z") && has("codex-example"), "technical details did not expose timestamp and session ID")
     var features = projectA; var featureStatus = features["status"] as! [String: Any]
     featureStatus["checkpointClosure"] = ["state":"complete", "finishCondition":"Pass review", "evidence":"Review passed"]
     featureStatus["effortRange"] = ["min":2, "max":4, "unit":"hours", "source":"Prior work", "coverage":"Current checkpoint"]
@@ -42,7 +45,7 @@ func runNativeChecks() {
     let priorScroll = view.scroll.contentView.bounds.origin
     var renamedB = projectB; var renamedStatus = renamedB["status"] as! [String: Any]; renamedStatus["name"] = "Renamed"; renamedB["status"] = renamedStatus
     view.render(projects:["a":projectA,"b":renamedB], selected:"a", unavailable:false)
-    precondition(view.picker.itemArray.contains { $0.title == "Renamed · b" } && view.picker.selectedItem?.representedObject as? String == "a" && has("Child marker") && view.scroll.contentView.bounds.origin == priorScroll, "other project rename did not refresh picker safely")
+    precondition(view.picker.itemArray.contains { $0.title == "Renamed" } && view.picker.selectedItem?.representedObject as? String == "a" && has("Child marker") && view.scroll.contentView.bounds.origin == priorScroll, "other project rename did not refresh picker safely")
     guard let button = disclosure() else { fatalError("missing disclosure") }; button.performClick(nil); precondition(!has("Child marker"), "collapse failed")
     view.render(projects:["a":projectA,"b":projectB], selected:"a", unavailable:false); precondition(!has("Child marker"), "refresh lost collapse")
     view.render(projects:["a":projectA,"b":projectB], selected:"b", unavailable:false); precondition(view.picker.selectedItem?.representedObject as? String == "b")
@@ -53,6 +56,13 @@ func runNativeChecks() {
     var long = projectA; var longData = long["status"] as! [String: Any]; longData.removeValue(forKey:"currentMilestoneID"); longData["checklist"] = (1...30).map { ["id":"item\($0)", "title":"Milestone \($0)", "done":false] as [String : Any] }; long["status"] = longData
     view.render(projects:["a":long], selected:"a", unavailable:false); view.layoutSubtreeIfNeeded(); let maxScroll = view.body.frame.height - view.scroll.contentSize.height; precondition(maxScroll > 20); view.scroll.contentView.scroll(to:NSPoint(x:0,y:20)); let offset = view.scroll.contentView.bounds.origin.y
     view.render(projects:["a":long], selected:"a", unavailable:false); precondition(view.scroll.contentView.bounds.origin.y == offset, "unchanged refresh moved scroll")
+    var aged = projectA; aged["updatedAt"] = "2000-01-01T00:00:00Z"; view.render(projects:["a":aged], selected:"a", unavailable:true)
+    precondition(view.freshnessLabel!.stringValue.contains("STALE") && view.notice.stringValue.contains("Unavailable"), "stale or unavailable warning missing")
+    aged["updatedAt"] = "2999-01-01T00:00:00Z"; view.render(projects:["a":aged], selected:"a", unavailable:false)
+    precondition(view.freshnessLabel!.stringValue.contains("Clock mismatch"), "future date warning missing")
+    aged["updatedAt"] = "invalid"; view.render(projects:["a":aged], selected:"a", unavailable:false)
+    precondition(view.freshnessLabel!.stringValue.contains("Unknown"), "unknown date warning missing")
+    view.showAllProjects(); precondition(view.freshnessLabel!.stringValue.contains("Selected project updated"), "all-projects footer is ambiguous")
     let root = URL(fileURLWithPath: CommandLine.arguments[CommandLine.arguments.firstIndex(of: "--store")! + 1], isDirectory: true); try! FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let validRecord: [String: Any] = ["id":"a", "schema":1, "version":1, "request":"request", "sessions":["session"], "status":projectA["status"]!]
     let backup = try! JSONSerialization.data(withJSONObject: ["schema":1, "projects":["a":validRecord]])

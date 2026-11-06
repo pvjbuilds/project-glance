@@ -90,10 +90,21 @@ func addFull(_ child: NSView, to stack: NSStackView) { stack.addArrangedSubview(
 
 func fieldRow(_ title: String, _ value: String) -> NSStackView {
     let row = NSStackView(); row.orientation = .horizontal; row.alignment = .top; row.spacing = 8
-    let chip = NSStackView(); chip.orientation = .horizontal; chip.alignment = .centerY; chip.edgeInsets = NSEdgeInsets(top: 3, left: 6, bottom: 3, right: 6); chip.wantsLayer = true; chip.layer?.backgroundColor = NSColor(white: 1, alpha: 0.08).cgColor; chip.layer?.cornerRadius = 5
-    chip.addArrangedSubview(label(title, size: 10, weight: .semibold, color: .white)); chip.widthAnchor.constraint(equalToConstant: 78).isActive = true
-    let text = label(value, size: 12); row.addArrangedSubview(chip); row.addArrangedSubview(text); text.widthAnchor.constraint(equalTo: row.widthAnchor, constant: -86).isActive = true
+    let key = label(title, size: 11, weight: .medium, color: muted); key.widthAnchor.constraint(equalToConstant: 78).isActive = true
+    let text = label(value, size: 12, weight: .medium); row.addArrangedSubview(key); row.addArrangedSubview(text); text.widthAnchor.constraint(equalTo: row.widthAnchor, constant: -86).isActive = true
     return row
+}
+func separator() -> NSBox { let line = NSBox(); line.boxType = .separator; return line }
+func localSavedTime(_ raw: Any?) -> String {
+    guard let raw = raw as? String, let date = ISO8601DateFormatter().date(from: raw) else { return "Unknown" }
+    let formatter = DateFormatter()
+    let sameYear = Calendar.current.component(.year, from: date) == Calendar.current.component(.year, from: Date())
+    formatter.setLocalizedDateFormatFromTemplate(sameYear ? "dMMMjm" : "dMMMyjm")
+    return formatter.string(from: date)
+}
+func savedBy(_ record: [String: Any]) -> String {
+    guard let session = record["updatedBySession"] as? String else { return "Saver not recorded" }
+    if session.hasPrefix("codex-") { return "Codex" }; if session.hasPrefix("claude-") { return "Claude" }; return "Unknown assistant"
 }
 func detailRow(_ title: String, _ value: String) -> NSStackView {
     let group = column(3); addFull(label(title, size: 10, weight: .semibold, color: muted), to: group); let content = label(value, size: 11); content.isSelectable = true; addFull(content, to: group); return group
@@ -118,7 +129,7 @@ func detailGroups(_ title: String, _ value: String) -> NSStackView {
 
 final class TopClipView: NSClipView { override var isFlipped: Bool { true } }
 final class Overview: NSView {
-    let headerHelp = NSButton(); let picker = NSPopUpButton(); let body = column(10); let scroll = NSScrollView(); let notice = label("", size: 11, color: .systemOrange)
+    let headerHelp = NSButton(); let picker = NSPopUpButton(); let body = column(7); let scroll = NSScrollView(); let notice = label("", size: 11, color: .systemOrange)
     var allProjectsMode = false
     var recoveredBackup = false; var helpMode = false; var onCopyPrompt: ((String) -> Void)?; var lastProjects: [String: [String: Any]] = [:]; var lastSelected: String?; var lastUnavailable = false; var lastSignature: Data?; var lastDisplayedID: String?; var freshnessLabel: NSTextField?
     var onSelect: ((String) -> Void)?; var onSettings: (() -> Void)?; var onQuit: (() -> Void)?; var onContext: (() -> Void)?
@@ -131,15 +142,17 @@ final class Overview: NSView {
         scroll.contentView = TopClipView(); scroll.contentView.clipsToBounds = true; scroll.clipsToBounds = true; scroll.hasVerticalScroller = true; scroll.scrollerStyle = .legacy; scroll.autohidesScrollers = false; scroll.drawsBackground = false; scroll.borderType = .noBorder
         body.translatesAutoresizingMaskIntoConstraints = false; scroll.documentView = body
         NSLayoutConstraint.activate([body.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor), body.topAnchor.constraint(equalTo: scroll.contentView.topAnchor), body.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor)])
+        let freshnessView = label("", size: 11, color: muted); freshnessLabel = freshnessView; freshnessView.lineBreakMode = .byTruncatingTail; freshnessView.maximumNumberOfLines = 1
         let footer = NSStackView(); footer.orientation = .horizontal; footer.distribution = .fillEqually; footer.spacing = 8
         let settingsButton = NSButton(title: "Settings", target: self, action: #selector(settingsClicked)); settingsButton.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil); settingsButton.imagePosition = .imageLeading
         let quitButton = NSButton(title: "Quit", target: self, action: #selector(quitClicked)); quitButton.image = NSImage(systemSymbolName: "power", accessibilityDescription: nil); quitButton.imagePosition = .imageLeading; footer.addArrangedSubview(settingsButton); footer.addArrangedSubview(quitButton)
-        for v in [title, picker, notice, scroll, footer] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+        for v in [title, picker, notice, scroll, freshnessView, footer] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         NSLayoutConstraint.activate([
             title.topAnchor.constraint(equalTo: topAnchor, constant: 16), title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16), title.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
             picker.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 12), picker.leadingAnchor.constraint(equalTo: title.leadingAnchor), picker.trailingAnchor.constraint(equalTo: title.trailingAnchor),
             notice.topAnchor.constraint(equalTo: picker.bottomAnchor, constant: 2), notice.leadingAnchor.constraint(equalTo: title.leadingAnchor), notice.trailingAnchor.constraint(equalTo: title.trailingAnchor), notice.heightAnchor.constraint(equalToConstant: 15),
-            scroll.topAnchor.constraint(equalTo: notice.bottomAnchor, constant: 4), scroll.leadingAnchor.constraint(equalTo: title.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: title.trailingAnchor), scroll.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -12),
+            scroll.topAnchor.constraint(equalTo: notice.bottomAnchor, constant: 4), scroll.leadingAnchor.constraint(equalTo: title.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: title.trailingAnchor), scroll.bottomAnchor.constraint(equalTo: freshnessView.topAnchor, constant: -4),
+            freshnessView.leadingAnchor.constraint(equalTo: title.leadingAnchor), freshnessView.trailingAnchor.constraint(equalTo: title.trailingAnchor), freshnessView.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -6), freshnessView.heightAnchor.constraint(equalToConstant: 16),
             footer.leadingAnchor.constraint(equalTo: title.leadingAnchor), footer.trailingAnchor.constraint(equalTo: title.trailingAnchor), footer.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -16), footer.heightAnchor.constraint(equalToConstant: 27)
         ])
     }
@@ -173,6 +186,10 @@ final class Overview: NSView {
         guard let project = lastDisplayedID else { return }; UserDefaults.standard.set(sender.state == .on, forKey: "glance.details." + project)
         lastSignature = nil; render(projects: lastProjects, selected: lastSelected, unavailable: lastUnavailable)
     }
+    @objc func toggleTechnical(_ sender: NSButton) {
+        guard let project = lastDisplayedID else { return }; UserDefaults.standard.set(sender.state == .on, forKey: "glance.technical." + project)
+        lastSignature = nil; render(projects: lastProjects, selected: lastSelected, unavailable: lastUnavailable)
+    }
     @objc func toggleBranch(_ sender: NSButton) {
         guard let project = lastDisplayedID, let id = sender.identifier?.rawValue else { return }
         let key = "glance.expansion." + project; var choices = UserDefaults.standard.dictionary(forKey: key) as? [String: Bool] ?? [:]; choices[id] = sender.state == .on; UserDefaults.standard.set(choices, forKey: key)
@@ -184,26 +201,31 @@ final class Overview: NSView {
         lastProjects = projects; lastSelected = selected; lastUnavailable = unavailable
         let record = selectedID.flatMap { projects[$0] }
         let names = ids.map { key -> [String: String] in let data = projects[key]?["status"] as? [String: Any]; return ["id": key, "name": data?["name"] as? String ?? key] }
-        let signatureObject: [String: Any] = ["projects": names, "selected": selectedID ?? "", "record": record ?? [:], "unavailable": unavailable, "backup": recoveredBackup]
+        let signatureObject: [String: Any] = ["projects": allProjectsMode ? projects : names, "selected": selectedID ?? "", "record": record ?? [:], "unavailable": unavailable, "backup": recoveredBackup]
         let signature = try? JSONSerialization.data(withJSONObject: signatureObject, options: [.sortedKeys])
         func freshness(_ record: [String: Any]?) -> String {
-            let updated = record?["updatedAt"] as? String ?? ""; let date = ISO8601DateFormatter().date(from: updated)
-            let age = date.map { d -> String in let seconds = Date().timeIntervalSince(d); if seconds < -60 { return "clock mismatch · future timestamp" }; if seconds < 60 { return "just now" }; return RelativeDateTimeFormatter().localizedString(for: d, relativeTo: Date()) } ?? "unknown"
-            let stale = date.map { Date().timeIntervalSince($0) > 7*86400 } ?? true; return "\(stale ? "STALE  ·  " : "")Updated \(age)"
+            guard let record else { return "" }
+            let raw = record["updatedAt"] as? String ?? ""; let date = ISO8601DateFormatter().date(from: raw)
+            let stale = date.map { Date().timeIntervalSince($0) > 7*86400 } ?? true
+            let future = date.map { Date().timeIntervalSince($0) < -60 } ?? false
+            let prefix = future ? "Clock mismatch · " : (stale ? "STALE · " : "")
+            return prefix + (allProjectsMode ? "Selected project updated " : "Updated ") + localSavedTime(raw) + " · " + savedBy(record)
         }
         if let signature, signature == lastSignature { freshnessLabel?.stringValue = freshness(record); return }
         let previousOffset = scroll.contentView.bounds.origin; let preserve = selectedID == lastDisplayedID
         lastSignature = signature; lastDisplayedID = selectedID
         picker.removeAllItems()
-        for id in ids { let data = projects[id]?["status"] as? [String: Any]; let name = data?["name"] as? String ?? id; let item = NSMenuItem(title: "\(name) · \(id)", action: nil, keyEquivalent: ""); item.representedObject = id; picker.menu?.addItem(item) }
+        for id in ids { let data = projects[id]?["status"] as? [String: Any]; let name = data?["name"] as? String ?? id; let duplicate = names.filter { $0["name"] == name }.count > 1; let item = NSMenuItem(title: duplicate ? "\(name) · \(id)" : name, action: nil, keyEquivalent: ""); item.representedObject = id; picker.menu?.addItem(item) }
         if let selectedID, let item = picker.itemArray.first(where: { $0.representedObject as? String == selectedID }) { picker.select(item) }
         notice.stringValue = recoveredBackup ? "Current data unavailable · showing previous backup" : (unavailable ? (projects.isEmpty ? "Saved data unavailable" : "Unavailable · showing last saved view") : "")
-        body.arrangedSubviews.forEach { body.removeArrangedSubview($0); $0.removeFromSuperview() }; freshnessLabel = nil
+        body.arrangedSubviews.forEach { body.removeArrangedSubview($0); $0.removeFromSuperview() }; freshnessLabel?.stringValue = freshness(record); freshnessLabel?.toolTip = (record?["updatedAt"] as? String).map { "Saved timestamp: " + $0 }
         if allProjectsMode && !ids.isEmpty {
             for id in ids {
                 guard let data = projects[id]?["status"] as? [String: Any] else { continue }
-                let group = card(); let name = data["name"] as? String ?? id
-                let button = NSButton(title: name + " · " + id, target: self, action: #selector(selectProject(_:))); button.identifier = NSUserInterfaceItemIdentifier(id); group.addArrangedSubview(button)
+                if !body.arrangedSubviews.isEmpty { addFull(separator(), to: body) }
+                let group = column(6); let name = data["name"] as? String ?? id
+                let duplicate = names.filter { $0["name"] == name }.count > 1
+                let button = NSButton(title: duplicate ? name + " · " + id : name, target: self, action: #selector(selectProject(_:))); button.identifier = NSUserInterfaceItemIdentifier(id); group.addArrangedSubview(button)
                 addFull(label(data["checkpoint"] as? String ?? "Checkpoint unavailable", size: 12), to: group)
                 addFull(label(health(data)?.0 ?? "Health not recorded", size: 11, color: muted), to: group)
                 addFull(group, to: body)
@@ -213,24 +235,25 @@ final class Overview: NSView {
         guard let id = selectedID, let record else { addFull(label(unavailable ? "Project status is unavailable." : "No projects enrolled.", color: muted), to: body); return }
         guard let data = record["status"] as? [String: Any], let goal = data["goal"] as? String, let checkpoint = data["checkpoint"] as? String, let status = data["status"] as? String else { addFull(label("Project status is invalid or unavailable.", color: .systemOrange), to: body); return }
         let allButton = NSButton(title: "All projects", target: self, action: #selector(showAllProjects)); body.addArrangedSubview(allButton)
-        let overview = card(); addFull(label(status, size: 13, weight: .semibold), to: overview)
+        let overview = column(6)
         if let (state, reason) = health(data) {
-            let badge = NSStackView(); badge.orientation = .horizontal; badge.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
-            badge.wantsLayer = true; badge.layer?.backgroundColor = NSColor(white: 1, alpha: 0.12).cgColor; badge.layer?.cornerRadius = 7
-            badge.addArrangedSubview(label(state, size: 11, weight: .semibold)); overview.addArrangedSubview(badge)
+            let color: NSColor = state == "Waiting on you" || state == "Blocked" ? .systemOrange : (state == "Checkpoint complete" ? .systemGreen : .systemBlue)
+            addFull(label(state, size: 14, weight: .semibold, color: color), to: overview)
             addFull(label(reason, size: 12), to: overview)
-        }
+        } else { addFull(label(status, size: 14, weight: .semibold), to: overview) }
+        addFull(separator(), to: overview)
         addFull(fieldRow("Checkpoint", checkpoint), to: overview)
+        if case .items(let items) = checklist(data), !items.isEmpty { addFull(fieldRow("Progress", "\(items.filter(\.done).count) of \(items.count) milestones"), to: overview) }
         addFull(fieldRow("Next", (data["next"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Not provided"), to: overview)
-        addFull(fieldRow("Goal", goal), to: overview)
 
         let detailed = UserDefaults.standard.bool(forKey: "glance.details." + id)
         let details = NSButton(title: detailed ? "Hide details" : "Details", target: self, action: #selector(toggleDetails(_:))); details.setButtonType(.toggle); details.state = detailed ? .on : .off; details.isBordered = false; details.image = NSImage(systemSymbolName: detailed ? "chevron.down" : "chevron.right", accessibilityDescription: nil); details.imagePosition = .imageLeading; details.setAccessibilityLabel(detailed ? "Hide project details" : "Show project details"); overview.addArrangedSubview(details)
         if detailed {
         if let raw = data["tokenUsage"] { if let u = usage(raw, scopes: ["project", "linked-chat"], defaultScope: "project") { let prefix = u.scope == "linked-chat" ? "Linked chat · " : "Estimated project tokens · "; let line = label(prefix + tokensText(u) + (u.scope == "linked-chat" ? " · Project total not measured" : ""), size: 11, color: muted); line.toolTip = tokenDetails(u) + " · Coverage: " + u.coverage; line.setAccessibilityHelp(line.toolTip); addFull(line, to: overview) } else { addFull(label("Project usage unavailable · invalid data", size: 11, color: .systemOrange), to: overview) } } else { addFull(label("Project usage · Not measured", size: 11, color: muted), to: overview) }
-            let savedAt = (record["updatedAt"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) == nil ? nil : $0 } ?? "Not recorded or invalid"
+            let savedAt = localSavedTime(record["updatedAt"])
             addFull(detailRow("SAVED AT", savedAt), to: overview)
-            addFull(detailGroups("SAVING SESSION ID", record["updatedBySession"] as? String ?? "Not recorded"), to: overview)
+            addFull(detailGroups("GOAL", goal), to: overview)
+            addFull(detailGroups("SAVED STATUS", status), to: overview)
             if let closure = data["checkpointClosure"] as? [String: Any] {
                 if let condition = closure["finishCondition"] as? String { addFull(detailGroups("FINISH CONDITION", condition), to: overview) }
                 if let evidence = closure["evidence"] as? String, closure["state"] as? String == "complete" { addFull(detailGroups("COMPLETION EVIDENCE", evidence), to: overview) }
@@ -252,10 +275,14 @@ final class Overview: NSView {
             }
             if let effort = data["effort"] as? String, !effort.isEmpty { addFull(detailGroups("EFFORT", effort), to: overview) }
             if let raw = data["tokenUsage"], let u = usage(raw, scopes: ["project", "linked-chat"], defaultScope: "project") { addFull(detailGroups("COVERAGE", u.coverage), to: overview); addFull(detailGroups("SOURCE", u.source), to: overview); if let asOf = u.asOf { addFull(detailRow("AS OF", asOf), to: overview) } }
+            let technicalOpen = UserDefaults.standard.bool(forKey: "glance.technical." + id)
+            let technical = NSButton(title: technicalOpen ? "Hide technical details" : "Technical details", target: self, action: #selector(toggleTechnical(_:)))
+            technical.setButtonType(.toggle); technical.state = technicalOpen ? .on : .off; technical.isBordered = false; technical.image = NSImage(systemSymbolName: technicalOpen ? "chevron.down" : "chevron.right", accessibilityDescription: nil); technical.imagePosition = .imageLeading; overview.addArrangedSubview(technical)
+            if technicalOpen { addFull(detailRow("RAW TIMESTAMP", record["updatedAt"] as? String ?? "Not recorded"), to: overview); addFull(detailRow("PROJECT ID", id), to: overview); addFull(detailGroups("SAVING SESSION ID", record["updatedBySession"] as? String ?? "Not recorded"), to: overview) }
         }
         if data["contextURL"] is String { let button = NSButton(title: "Open project context", target: self, action: #selector(contextClicked)); button.isBordered = false; button.contentTintColor = .systemBlue; overview.addArrangedSubview(button) }
         addFull(overview, to: body)
-        let milestones = card()
+        let milestones = column(6)
         switch checklist(data) {
         case .missing: addFull(label("No milestones recorded", color: muted), to: milestones)
         case .invalid: addFull(label("Milestones unavailable · invalid data", color: .systemOrange), to: milestones)
@@ -280,17 +307,6 @@ final class Overview: NSView {
             for item in items { addNode(item, 0) }
         }
         addFull(milestones, to: body)
-        let fresh = label(freshness(record), size: 11, color: muted); freshnessLabel = fresh; addFull(fresh, to: body)
-        if let state = (data["health"] as? [String: Any])?["state"] as? String, state == "waiting-on-you" || state == "parked" {
-            addFull(label("Saved health: \(state == "parked" ? "Parked" : "Waiting on you") · age above is time since save", size: 11, color: muted), to: body)
-        }
-        let saver: String
-        if let session = record["updatedBySession"] as? String {
-            if session.hasPrefix("codex-") { saver = "Codex session" }
-            else if session.hasPrefix("claude-") { saver = "Claude session" }
-            else { saver = "Unknown assistant" }
-        } else { saver = "Not recorded" }
-        addFull(label("Last saved by: " + saver, size: 11, color: muted), to: body)
         layoutSubtreeIfNeeded(); if preserve { scroll.contentView.scroll(to: previousOffset); scroll.reflectScrolledClipView(scroll.contentView) }
 
     }
