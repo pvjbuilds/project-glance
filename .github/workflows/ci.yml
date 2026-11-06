@@ -1,0 +1,22 @@
+name: Source checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: scripts/build.sh
+      - name: Non-UI checks
+        run: |
+          python3 tests/store.py
+          python3 tests/improvements.py
+          python3 tests/release_reliability.py
+          python3 tests/show_launcher.py
+          python3 tests/interrupted_writes.py
+          python3 tests/interrupted_recovery.py

@@ -8,6 +8,8 @@ node_modules/
 build/
 *.app/
 store.json
+store.backup.json
+store.corrupt.*.json
 .lock
 docs/ai/architecture.*.json
 docs/ai/archify-recheck-*/

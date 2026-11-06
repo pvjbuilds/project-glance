@@ -2,7 +2,7 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "Project overview: proposed local architecture",
+    "title": "Glance: local project status",
     "output": "docs/ai/architecture.html",
     "quality_profile": "showcase",
     "locale": "en"
@@ -68,7 +68,7 @@
       "id": "viewer",
       "type": "frontend",
       "label": "Native viewer",
-      "sublabel": "Menu bar + floating card",
+      "sublabel": "Menu-bar popover",
       "pos": [
         860,
         300
@@ -118,15 +118,15 @@
       "dot": "emerald",
       "title": "Local state",
       "items": [
-        "One JSON envelope and a lock file in a selectable store folder",
-        "Viewer retains last valid content in memory; selection and position use macOS preferences"
+        "Local primary and previous backup; explicit recovery can lose later changes",
+        "Viewer marks unavailable data and can show a validated previous snapshot"
       ]
     },
     {
       "dot": "rose",
       "title": "Review status",
       "items": [
-        "Prototype reviewed; changes requested; re-review pending",
+        "Source alpha; limited compatibility validation",
         "No continuous model process or cloud service"
       ]
     }

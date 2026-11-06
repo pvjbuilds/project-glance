@@ -1,4 +1,4 @@
-import json, os, pathlib, plistlib, subprocess, tempfile, sys
+import hashlib, json, os, pathlib, plistlib, subprocess, tempfile
 base=pathlib.Path(__file__).resolve().parents[1]; binary=base/'build/glance-store'; installer=base/'scripts/install-agent-skills.sh'
 with tempfile.TemporaryDirectory() as td:
  t=pathlib.Path(td); root=t/'data'; payload=t/'status.json';payload.write_text(json.dumps(dict(goal='Goal',checkpoint='Checkpoint',status='Active')))
@@ -31,7 +31,14 @@ with tempfile.TemporaryDirectory() as td:
  ch=t/'agents';cl=t/'claude'; args=[str(installer),'--app',str(app),'--codex-home',str(ch),'--claude-home',str(cl)]
  def install(): return subprocess.run(args,capture_output=True,text=True)
  v=install(); assert v.returncode==0,(v.stdout,v.stderr)
- assert subprocess.run([sys.executable,'/Users/praj/.codex/skills/.system/skill-creator/scripts/quick_validate.py',str(ch/'skills/project-glance')],capture_output=True).returncode==0
+ router=(ch/'skills/project-glance/SKILL.md').read_text()
+ front, sep, body=router.removeprefix('---\n').partition('\n---\n')
+ assert sep and front.splitlines()[0]=='name: project-glance'
+ assert any(line.startswith('description: ') and len(line)>len('description: ') for line in front.splitlines())
+ assert str(app/'Contents/Resources/AgentGuide.md') in body and str(u) in body
+ content, sep, digest=router.rpartition('# Glance managed router sha256: ')
+ assert sep and digest.strip()==hashlib.sha256(content.encode()).hexdigest()
+ assert (cl/'skills/project-glance/SKILL.md').read_text()==router
  first=(ch/'skills/project-glance/SKILL.md').read_bytes(); assert install().returncode==0 and (ch/'skills/project-glance/SKILL.md').read_bytes()==first
  (cl/'skills/project-glance/SKILL.md').write_text('unmanaged')
  before=(ch/'skills/project-glance/SKILL.md').read_bytes();assert install().returncode!=0 and (ch/'skills/project-glance/SKILL.md').read_bytes()==before

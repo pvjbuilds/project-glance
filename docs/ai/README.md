@@ -5,11 +5,10 @@
 Read [Project](PROJECT.md), [Current state](CURRENT_STATE.md), and relevant entries in
 [Decisions and assumptions](DECISIONS.md) before substantive work. Follow their links
 on demand. Re-read changed context after a harness switch or compaction.
-Also read the cross-project rules file (RULES.md) at the path your machine-level
-instructions give; this file does not carry that path.
-If a required file is unavailable, report the gap and continue only independent work.
-For a remote checkout, obtain an authorized, sanitized policy reference before work
-that depends on unavailable local guidance. Never claim an unread file was loaded.
+Follow any applicable machine-level instructions in your own environment as well.
+This repository contract is self-contained; personal rules from another machine are
+not required to contribute. If an applicable required instruction is unavailable,
+report the gap and continue only independent work. Never claim an unread file was loaded.
 
 ## Review mode
 
