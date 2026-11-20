@@ -315,6 +315,7 @@ final class Overview: NSView {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     let root: URL = { let args = CommandLine.arguments; if let i = args.firstIndex(of: "--store"), i+1 < args.count { return URL(fileURLWithPath: args[i+1], isDirectory: true) }; return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("ProjectOverview", isDirectory: true) }()
     let overview = Overview(); let popover = NSPopover(); var status: NSStatusItem!; var watcher: DispatchSourceFileSystemObject?; var timer: Timer?; var retry: Timer?
+    var globalMouseMonitor: Any?; var localMouseMonitor: Any?
     var cached: [String: [String: Any]] = [:]; var hasSnapshot = false; var usingBackup = false; var selected = UserDefaults.standard.string(forKey: "selectedProject"); var unavailable = false
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory); let menu = NSMenu(); let item = NSMenuItem(); menu.addItem(item); let sub = NSMenu(); sub.addItem(withTitle: "Quit Glance", action: #selector(quit), keyEquivalent: "q"); item.submenu = sub; NSApp.mainMenu = menu
@@ -325,6 +326,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         refresh(); watch(); timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.refresh() }; if CommandLine.arguments.contains("--show") { DispatchQueue.main.async { [weak self] in self?.showPopover() } }
     }
     @objc func toggle() { if popover.isShown { popover.performClose(nil) } else { showPopover() } }
+    func popoverDidShow(_ notification: Notification) {
+        guard popover.isShown else { return }
+        removeMouseMonitors()
+        let mouseDown: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: mouseDown) { [weak self] _ in self?.popover.performClose(nil) }
+        localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: mouseDown) { [weak self] event in
+            self?.dismissForLocalMouseDown(event)
+            return event
+        }
+    }
+    func dismissForLocalMouseDown(_ event: NSEvent) {
+        guard popover.isShown else { return }
+        if event.window === popover.contentViewController?.view.window { return }
+        if let button = status.button, event.window === button.window,
+           button.bounds.contains(button.convert(event.locationInWindow, from: nil)) { return }
+        popover.performClose(nil)
+    }
+    func popoverWillClose(_ notification: Notification) { removeMouseMonitors() }
+    func popoverDidClose(_ notification: Notification) { removeMouseMonitors() }
+    func applicationWillTerminate(_ notification: Notification) { removeMouseMonitors() }
+    func removeMouseMonitors() {
+        if let monitor = globalMouseMonitor { NSEvent.removeMonitor(monitor); globalMouseMonitor = nil }
+        if let monitor = localMouseMonitor { NSEvent.removeMonitor(monitor); localMouseMonitor = nil }
+    }
     func showPopover(attempt: Int = 0) {
         guard !popover.isShown else { return }
         if let button = status.button, button.window != nil { refresh(); popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY) }

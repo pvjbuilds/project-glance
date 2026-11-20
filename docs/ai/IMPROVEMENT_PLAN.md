@@ -13,7 +13,7 @@ Scope: preserve explicit enrollment and association, one canonical local record 
 - [x] **9. Token reporting in Details.** Acceptance: show only explicitly supplied scoped and sourced token data in Details; absence remains unknown. Dependencies: existing scoped usage model and compact layout.
 - [x] **10. Opt-in recurring work.** Acceptance: explicitly enrolled recurring work shows last, next and current cycle with clear source and no invented schedule; ordinary projects need no recurring fields. Dependencies: closure and freshness semantics.
 
-Items 2–4 completed in 0.1.1 (2); items 5–10 implemented and reviewed in candidate 0.2.0 (3), with installation and live readback pending. See [current state](CURRENT_STATE.md). Item 1 remains open for actual physical checks.
+Items 2–4 completed in 0.1.1 (2); items 5–10 implemented, reviewed and installed in 0.2.0 (3) with live readback. See [current state](CURRENT_STATE.md). Item 1 remains open for actual physical checks.
 
 ## Batches and gates
 

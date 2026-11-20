@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.3 — source alpha
+
+- Dismiss the menu-bar popover on outside mouse clicks.
+
 ## 0.2.2 — source alpha
 
 - Read and validate the atomic primary snapshot without creating or writing a lock; writes remain serialized.

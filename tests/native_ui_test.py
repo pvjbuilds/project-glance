@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Runs an isolated AppKit self-test; it briefly maps a test window."""
 from pathlib import Path
-import subprocess, tempfile
+import subprocess, sys, tempfile
 root = Path(__file__).resolve().parents[1]
 source = (root / 'Sources/Viewer.swift').read_text()
 tests = (root / 'tests/native_ui_check.swift').read_text()
@@ -14,4 +14,7 @@ with tempfile.TemporaryDirectory(prefix='glance-native-check-') as tmp:
     tmp = Path(tmp); source_path = tmp / 'main.swift'; source_path.write_text(source)
     binary = tmp / 'ui-check'; cache = root / 'build/module-cache'; cache.mkdir(parents=True, exist_ok=True)
     subprocess.run(['swiftc', '-module-cache-path', str(cache), str(source_path), '-o', str(binary)], check=True)
-    subprocess.run([str(binary), '--store', str(tmp / 'missing-store'), '--test-ui'], check=True)
+    result = subprocess.run([str(binary), '--store', str(tmp / 'missing-store'), '--test-ui'], capture_output=True, text=True)
+    print(result.stdout, end=''); print(result.stderr, end='', file=sys.stderr)
+    if result.returncode != 0 or 'Native checks passed:' not in result.stdout:
+        raise SystemExit(f'Native checks failed: exit {result.returncode}; success marker present: {"Native checks passed:" in result.stdout}')

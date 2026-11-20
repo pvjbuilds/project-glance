@@ -1,3 +1,9 @@
+## Current checkpoint · 20 November 2026
+
+The public MIT source prerelease is v0.2.2 at `ab43b6a`. GitHub shows successful hosted checks for that revision. The local app has been updated to 0.2.3 build 6 for outside-click dismissal. The installed bundle matches the built viewer, updater, guide and plist, passes signature verification, and was relaunched successfully.
+
+The AppKit desktop harness passed inside and outside local event dispatch, status-button handling, reopen, late show callbacks, and monitor cleanup. All seven non-UI suites passed. A physical click in another app, picker menu tracking, full accessibility, sleep/wake, Spaces, external displays and login launch still need targeted acceptance. The review and beta priorities are in [the 20 November project review](reviews/2026-11-20-project-review.md). Opus 5.5 medium advised on the passive dismissal design. The final implementation includes its show guard and close cleanup.
+
 ## Installed permission fix — 7 November 2026
 
 Version0.2.2build5 installed; viewer/updater/guide match reviewed build, ad-hoc signature verified, managed routers refreshed. Installed updater list succeeded in the same Codex workspace-write sandbox without escalation. Primary bytes and the existing LocalVoice revision2 record digest remained unchanged; no LocalVoice source or record writes. Writer mutations still need host write permission for the shared store directory. CLI listing observes a complete validated primary snapshot, which may become stale; locked writer CAS remains authoritative. Independent local review and tests passed as recorded below; hosted CI pending at this checkpoint.

@@ -82,7 +82,40 @@ func runNativeChecks() {
     precondition(!delegate.unavailable && !delegate.usingBackup && delegate.cached["a"] != nil && delegate.watcher != nil, "simulated wake did not reload and attach watcher")
     var corruptStatus = validRecord; var corruptFields = corruptStatus["status"] as! [String: Any]; corruptFields["checkpointClosure"] = ["state":"complete", "finishCondition":"No evidence"]; corruptStatus["status"] = corruptFields
     try! JSONSerialization.data(withJSONObject: ["schema":2, "projects":["a":corruptStatus]]).write(to: root.appendingPathComponent("store.json"))
+    func waitFor(_ condition: () -> Bool) -> Bool {
+        let deadline = Date(timeIntervalSinceNow: 2)
+        while !condition() && Date() < deadline { RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.02)) }
+        return condition()
+    }
+    func monitorsReady() -> Bool { delegate.popover.isShown && delegate.localMouseMonitor != nil && delegate.globalMouseMonitor != nil }
+    func assertMonitorsReady(_ context: String) {
+        let ready = waitFor(monitorsReady)
+        precondition(ready, "\(context): shown=\(delegate.popover.isShown), local=\(delegate.localMouseMonitor != nil), global=\(delegate.globalMouseMonitor != nil)")
+    }
     delegate.showPopover(); precondition(delegate.overview.notice.stringValue == "Unavailable · showing last saved view", "invalid record was displayed as available")
+    assertMonitorsReady("initial show")
+    func mouseDown(_ target: NSWindow, _ point: NSPoint) -> NSEvent {
+        NSEvent.mouseEvent(with: .leftMouseDown, location: point, modifierFlags: [], timestamp: 0, windowNumber: target.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!
+    }
+    let popoverWindow = delegate.overview.window!
+    NSApp.sendEvent(mouseDown(popoverWindow, NSPoint(x: 10, y: 10)))
+    precondition(delegate.popover.isShown, "inside click closed popover")
+    let statusButton = delegate.status.button!
+    delegate.dismissForLocalMouseDown(mouseDown(statusButton.window!, statusButton.convert(NSPoint(x: statusButton.bounds.midX, y: statusButton.bounds.midY), to: nil)))
+    precondition(delegate.popover.isShown, "status click closed before toggle")
+    delegate.toggle(); precondition(waitFor { !delegate.popover.isShown && delegate.localMouseMonitor == nil && delegate.globalMouseMonitor == nil }, "toggle did not close and clean up")
+    delegate.toggle(); assertMonitorsReady("toggle reopen")
+    NSApp.sendEvent(mouseDown(window, NSPoint(x: 10, y: 10)))
+    precondition(waitFor { !delegate.popover.isShown && delegate.localMouseMonitor == nil && delegate.globalMouseMonitor == nil }, "outside event did not close and clean up")
+    delegate.popoverDidShow(Notification(name: NSPopover.didShowNotification))
+    precondition(delegate.localMouseMonitor == nil && delegate.globalMouseMonitor == nil, "late show callback installed monitors after close")
+    delegate.showPopover(); delegate.popover.performClose(nil)
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.5))
+    precondition(waitFor { !delegate.popover.isShown && delegate.localMouseMonitor == nil && delegate.globalMouseMonitor == nil }, "rapid close left monitors installed")
+    delegate.removeMouseMonitors(); delegate.removeMouseMonitors()
+    delegate.showPopover(); assertMonitorsReady("show before termination"); delegate.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
+    precondition(delegate.localMouseMonitor == nil && delegate.globalMouseMonitor == nil, "termination did not clean up")
+    delegate.popover.performClose(nil)
     let icon = delegate.status.button!.image!; precondition(icon.size.width > 0 && icon.size.width <= 20); print("Native checks passed: stable identity, current default, collapse, refresh, project switch, expansion, invalid/legacy and icon target/size.")
     window.orderOut(nil); NSStatusBar.system.removeStatusItem(delegate.status); testDefaults.removePersistentDomain(forName: testDomain)
 }
