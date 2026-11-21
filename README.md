@@ -1,69 +1,73 @@
-# Glance: local macOS menu-bar project status for AI-assisted work
+# Glance — local macOS menu bar project tracker for Codex and Claude Code
 
-Glance is an early **0.2.3 alpha source build** for keeping a small set of explicitly enrolled projects visible in a macOS menu-bar popover. A person or an associated AI agent supplies each checkpoint; Glance does not discover projects or run a model.
+Glance is a native macOS menu bar app for tracking the projects you work on with AI coding agents. Open it to see the goal, saved checkpoint, next action and milestone checklist for projects you explicitly add. Glance stores the status on your Mac and works with Codex, Claude Code or another agent that can run the local updater.
 
-**New in 0.2.3:** The menu-bar popover dismisses when you click outside it.
+**New in v0.3.0 (21 November 2026).** Click outside to dismiss the popover. The new Help view puts the setup prompt up front. The project board shows when the checkpoint was saved and lets you expand long next actions.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.png">
-  <img src="docs/architecture-light.png" alt="A person explicitly requests enrollment or an update; an associated agent uses the local updater to write the project store, which the menu-bar viewer reads.">
+  <img src="docs/architecture-light.png" alt="You ask to enroll or connect a project. An associated agent uses the local updater to write the project store, which the macOS menu bar app reads.">
 </picture>
 
-![Glance menu-bar status board showing a fictional project](docs/images/app-overview.png)
+| Project board | Setup and Help |
+| --- | --- |
+| <img src="docs/images/app-overview.png" alt="Glance menu bar popover with the Atlas demo project, its checkpoint and saved age, next action, and nested milestone checklist." width="360"> | <img src="docs/images/app-help.png" alt="Glance Help screen with a prominent Copy setup prompt button and expandable guidance on continuing a project and reading the board." width="360"> |
 
-*Glance with fictional example data.*
+*Screenshots use fictional project data.* [Changes by version](CHANGELOG.md) · [Agent guide](docs/agent/AgentGuide.md) · [Architecture details](docs/ai/architecture.html)
 
-[Architecture details](docs/ai/architecture.html) · [Changes in 0.2.3](CHANGELOG.md)
+## Build and run on macOS
 
-## Build and run from source
-
-Requires macOS, Apple's Command Line Tools (including Swift), and Python 3 for the tests. The build uses the installed Swift toolchain's default deployment target; it does not declare a macOS minimum. The local source build was checked on macOS 26.6.2, Apple silicon, with Swift 6.3.3; its viewer binary reports a macOS 26.0 minimum. Compatibility across other macOS versions has not been established. The local app is ad-hoc signed, not Developer ID signed or notarized.
+Install Apple's Command Line Tools (with Swift) before building. Python 3 is required for the checks. This is an MIT-licensed source prerelease. Build and install it on your Mac using the steps below.
 
 ```sh
+git clone --branch v0.3.0 --depth 1 https://github.com/pvjbuilds/project-glance.git
+cd project-glance
 scripts/build.sh
 python3 tests/store.py
-python3 tests/read_only_store.py  # run as a non-root user
-python3 tests/improvements.py
-python3 tests/release_reliability.py
+python3 tests/read_only_store.py
 scripts/show.sh
 ```
 
-The build creates `build/ProjectOverview.app` and `build/glance-store`. The show script opens its popover. Ordinary launch remains silent; click the menu-bar icon to open or close it, and use Quit in the popover to exit. For an optional local installation, `scripts/install.sh` installs to `~/Applications/Glance.app` and refuses an unrecognized existing app. Rebuild and rerun the installer to update it. This is source installation, not a distributed or notarized binary.
+`scripts/build.sh` creates `build/ProjectOverview.app` and `build/glance-store`. `scripts/show.sh` opens the popover. Run the tests as a regular, non-root user. The [CI workflow](.github/workflows/ci.yml) lists all seven non-UI checks. Run `python3 tests/native_ui_test.py` from a logged-in Mac desktop for the AppKit checks.
+
+To install, run `scripts/install.sh`. It places the app in `~/Applications/Glance.app` and replaces only a recognized Glance installation. For an update, rebuild the new version and rerun the installer. Open Glance from its menu bar icon, then select **Help** to copy the setup prompt.
+
+Local verification used macOS 26.6.2 on Apple silicon with Swift 6.3.3. The build uses the toolchain's deployment target. Compatibility with other macOS versions or Intel Macs has yet to be established. The local build is ad-hoc signed. The source release supplies no installer binary.
 
 ## Install with an AI agent
 
-Give an agent this repository and this prompt:
+Paste this prompt into Codex or Claude Code:
 
-> Read the README and project instructions. Build and test Glance from source, explaining any failures. Do not install the app or agent skills, change login settings, enroll projects, scan my files, or import conversations unless I explicitly ask. Use a temporary store for experiments.
+> Use Glance v0.3.0 from https://github.com/pvjbuilds/project-glance/tree/v0.3.0. Read AGENTS.md and follow the project instructions. Build with `scripts/build.sh` and run `python3 tests/store.py` and `python3 tests/read_only_store.py`. Report the results and app path. If I explicitly ask to install, use `scripts/install.sh`. Use a temporary store for examples. Ask before changing assistant skills or login settings, enrolling projects, scanning files or importing conversations.
 
-To opt in to the Codex router after installing the app, run `scripts/install-agent-skills.sh --codex-only`. Without that flag the script targets both Codex and Claude skill homes; use it only when both are intended. It refuses unmanaged existing skills. A new chat may be needed to discover a newly installed router.
+After installing, `scripts/install-agent-skills.sh --codex-only` optionally adds the Codex router. Running it without that flag targets both Codex and Claude Code skill homes. It refuses to overwrite an unmanaged skill. Start a new chat if the new skill does not appear immediately.
 
 ## Frequently asked questions
 
-### How do I add or update a project?
+### How do I add a project to Glance?
 
-Ask an agent to add a specific project to Glance, or use `build/glance-store` directly. Each new chat must be explicitly connected before it can update an existing project. The [agent guide](docs/agent/AgentGuide.md) contains the payload format, commands, version checks and readback procedure. Use `--store DIRECTORY` before a command to experiment with a separate store. Only explicit enrollment creates a store; launching or installing the app does not enroll data.
+Open **Help**, click **Copy setup prompt**, and paste it into the chat for the project you want to track. The prompt points your agent to the included guide and updater. The first-run screen offers the same button. Your agent saves the checkpoint and reads it back to confirm. Only an explicit enrollment creates a store.
 
-### Where is my data stored?
+### How do I update a project from another chat?
 
-The default is `~/Library/Application Support/ProjectOverview/` on your Mac. The viewer reads local data; Glance does not upload it, search your computer, import conversations, or start a model. Do not put secrets, raw prompts or transcripts into status fields. Session association coordinates cooperating agents; it is not protection against other local processes.
+Ask the new chat to connect to the existing Glance project before saving an update. The [agent guide](docs/agent/AgentGuide.md#read-enroll-connect-update-read-back) covers stable project IDs, session association, version checks and readback. Use `--store DIRECTORY` before an updater command to test with a separate store.
+
+### Does Glance run an AI model or upload project data?
+
+Glance reads a local store at `~/Library/Application Support/ProjectOverview/` by default. It does not run a model, upload data, scan for projects or import chat history. A session association helps cooperating agents coordinate updates. Keep secrets, raw prompts and transcripts out of saved status.
 
 ### What happens if the store is unavailable?
 
-The viewer marks unavailable data and may display its last valid in-memory view or a previous validated backup. The backup can omit later updates. Writes reject a missing or invalid primary when a backup exists. **Recovery is explicit and can lose later changes**: inspect and preserve the files, then follow the digest-checked recovery procedure in the [agent guide](docs/agent/AgentGuide.md#explicit-migration-and-recovery). The backup and primary are separate replacements, not one transaction. A write error can leave the outcome uncertain; read the current state before retrying. Power-loss behavior has not been tested.
+Glance labels an unavailable store and may show the last valid snapshot or a previous validated backup. A backup can omit later changes. For an explicit, digest-checked recovery, see the [recovery instructions](docs/agent/AgentGuide.md#explicit-migration-and-recovery).
 
-### Does it start at login?
+### Does Glance open at login?
 
-The Settings control offers an optional macOS-managed login item; it is not enabled automatically. Login-item behavior has not been verified. Sleep/wake, Spaces and display changes also need further testing.
-
-### What is the release status?
-
-This is an early source build, not a consumer-ready release. The name is provisional; independent Astra source-alpha review passed on 7 November 2026 (solo:codex, with same-provider blind spots). Local UI and source review evidence is recorded in [current state](docs/ai/CURRENT_STATE.md) and [review history](docs/ai/reviews/2026-11-07-compact-board.md); it does not establish compatibility on other machines. The [project contract](docs/ai/README.md) describes development and review requirements.
+Launch at login is an opt-in setting. Physical verification of launch at login, sleep and wake, Spaces, external displays and VoiceOver is still open. See the [current verification record](docs/ai/CURRENT_STATE.md) for what has been tested.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE)
 
 ## Keywords
 
-macOS menu bar, project status, local AI agent workflow, project checkpoint, Codex, Claude Code, explicit enrollment
+macOS menu bar project tracker, local-first project status dashboard, AI coding agent workflow, Codex project tracker, Claude Code project tracker, checkpoints and milestones

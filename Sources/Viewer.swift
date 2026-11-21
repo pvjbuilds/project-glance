@@ -127,32 +127,55 @@ func detailGroups(_ title: String, _ value: String) -> NSStackView {
     return group
 }
 
+// The button keeps AppKit's keyboard/action handling while drawing a persistent accent.
+final class PrimaryButton: NSButton {
+    private var hovering = false
+    private var hoverArea: NSTrackingArea?
+    override var isHighlighted: Bool { didSet { updateColor() } }
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        addTrackingArea(area); hoverArea = area
+    }
+    override func mouseEntered(with event: NSEvent) { hovering = true; updateColor() }
+    override func mouseExited(with event: NSEvent) { hovering = false; updateColor() }
+    func updateColor() {
+        let rgb: (CGFloat, CGFloat, CGFloat) = isHighlighted ? (0, 0.31, 0.65) : (hovering ? (0, 0.38, 0.76) : (0, 0.36, 0.72))
+        layer?.backgroundColor = NSColor(srgbRed: rgb.0, green: rgb.1, blue: rgb.2, alpha: 1).cgColor
+    }
+    override var focusRingMaskBounds: NSRect { bounds }
+    override func drawFocusRingMask() { NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill() }
+}
+func writeSetupPrompt(_ prompt: String, to pasteboard: NSPasteboard) -> Bool { pasteboard.clearContents(); return pasteboard.setString(prompt, forType: .string) }
+
 final class TopClipView: NSClipView { override var isFlipped: Bool { true } }
 final class Overview: NSView {
     let headerHelp = NSButton(); let picker = NSPopUpButton(); let body = column(7); let scroll = NSScrollView(); let notice = label("", size: 11, color: .systemOrange)
     var allProjectsMode = false
-    var recoveredBackup = false; var helpMode = false; var onCopyPrompt: ((String) -> Void)?; var lastProjects: [String: [String: Any]] = [:]; var lastSelected: String?; var lastUnavailable = false; var lastSignature: Data?; var lastDisplayedID: String?; var freshnessLabel: NSTextField?
+    var priorScroll = NSPoint.zero; var helpContinue = false; var helpBoard = false; var nextExpanded = false
+    var pickerHeight: NSLayoutConstraint!; var copyFeedback: NSTextField?; var ageLabel: NSTextField?
+    var recoveredBackup = false; var helpMode = false; var onCopyPrompt: ((String) -> Bool)?; var lastProjects: [String: [String: Any]] = [:]; var lastSelected: String?; var lastUnavailable = false; var lastSignature: Data?; var lastDisplayedID: String?
     var onSelect: ((String) -> Void)?; var onSettings: (() -> Void)?; var onQuit: (() -> Void)?; var onContext: (() -> Void)?
     init() {
         super.init(frame: NSRect(x: 0, y: 0, width: 400, height: 570)); wantsLayer = true; layer?.backgroundColor = shell.cgColor
         appearance = NSAppearance(named: .darkAqua)
         let title = NSStackView(); title.orientation = .horizontal; title.alignment = .centerY; title.spacing = 8
-        let mark = NSImageView(); mark.image = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: nil); mark.contentTintColor = .white; mark.widthAnchor.constraint(equalToConstant: 20).isActive = true; mark.heightAnchor.constraint(equalToConstant: 20).isActive = true; title.addArrangedSubview(mark); title.addArrangedSubview(label("Glance", size: 17, weight: .semibold)); let spacer = NSView(); spacer.setContentHuggingPriority(.defaultLow, for: .horizontal); title.addArrangedSubview(spacer); let help = headerHelp; help.image = NSImage(systemSymbolName: "questionmark.circle", accessibilityDescription: "Help"); help.isBordered = false; help.target = self; help.action = #selector(openHelp); help.toolTip = "How to use Glance"; help.setAccessibilityLabel("Help"); title.addArrangedSubview(help)
+        let mark = NSImageView(); mark.image = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: nil); mark.contentTintColor = .white; mark.widthAnchor.constraint(equalToConstant: 20).isActive = true; mark.heightAnchor.constraint(equalToConstant: 20).isActive = true; title.addArrangedSubview(mark); title.addArrangedSubview(label("Glance", size: 17, weight: .semibold)); let spacer = NSView(); spacer.setContentHuggingPriority(.defaultLow, for: .horizontal); title.addArrangedSubview(spacer); let help = headerHelp; help.title = "Help"; help.image = NSImage(systemSymbolName: "questionmark.circle", accessibilityDescription: nil); help.imagePosition = .imageLeading; help.target = self; help.action = #selector(openHelp); help.toolTip = "How to use Glance"; help.setAccessibilityLabel("Help"); title.addArrangedSubview(help)
+        pickerHeight = picker.heightAnchor.constraint(equalToConstant: 26); pickerHeight.isActive = true
         picker.target = self; picker.action = #selector(selection); picker.controlSize = .large
         scroll.contentView = TopClipView(); scroll.contentView.clipsToBounds = true; scroll.clipsToBounds = true; scroll.hasVerticalScroller = true; scroll.scrollerStyle = .legacy; scroll.autohidesScrollers = false; scroll.drawsBackground = false; scroll.borderType = .noBorder
         body.translatesAutoresizingMaskIntoConstraints = false; scroll.documentView = body
         NSLayoutConstraint.activate([body.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor), body.topAnchor.constraint(equalTo: scroll.contentView.topAnchor), body.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor)])
-        let freshnessView = label("", size: 11, color: muted); freshnessLabel = freshnessView; freshnessView.lineBreakMode = .byTruncatingTail; freshnessView.maximumNumberOfLines = 1
         let footer = NSStackView(); footer.orientation = .horizontal; footer.distribution = .fillEqually; footer.spacing = 8
         let settingsButton = NSButton(title: "Settings", target: self, action: #selector(settingsClicked)); settingsButton.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil); settingsButton.imagePosition = .imageLeading
         let quitButton = NSButton(title: "Quit", target: self, action: #selector(quitClicked)); quitButton.image = NSImage(systemSymbolName: "power", accessibilityDescription: nil); quitButton.imagePosition = .imageLeading; footer.addArrangedSubview(settingsButton); footer.addArrangedSubview(quitButton)
-        for v in [title, picker, notice, scroll, freshnessView, footer] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+        for v in [title, picker, notice, scroll, footer] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         NSLayoutConstraint.activate([
             title.topAnchor.constraint(equalTo: topAnchor, constant: 16), title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16), title.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
             picker.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 12), picker.leadingAnchor.constraint(equalTo: title.leadingAnchor), picker.trailingAnchor.constraint(equalTo: title.trailingAnchor),
             notice.topAnchor.constraint(equalTo: picker.bottomAnchor, constant: 2), notice.leadingAnchor.constraint(equalTo: title.leadingAnchor), notice.trailingAnchor.constraint(equalTo: title.trailingAnchor), notice.heightAnchor.constraint(equalToConstant: 15),
-            scroll.topAnchor.constraint(equalTo: notice.bottomAnchor, constant: 4), scroll.leadingAnchor.constraint(equalTo: title.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: title.trailingAnchor), scroll.bottomAnchor.constraint(equalTo: freshnessView.topAnchor, constant: -4),
-            freshnessView.leadingAnchor.constraint(equalTo: title.leadingAnchor), freshnessView.trailingAnchor.constraint(equalTo: title.trailingAnchor), freshnessView.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -6), freshnessView.heightAnchor.constraint(equalToConstant: 16),
+            scroll.topAnchor.constraint(equalTo: notice.bottomAnchor, constant: 4), scroll.leadingAnchor.constraint(equalTo: title.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: title.trailingAnchor), scroll.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -10),
             footer.leadingAnchor.constraint(equalTo: title.leadingAnchor), footer.trailingAnchor.constraint(equalTo: title.trailingAnchor), footer.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -16), footer.heightAnchor.constraint(equalToConstant: 27)
         ])
     }
@@ -163,24 +186,45 @@ final class Overview: NSView {
     @objc func settingsClicked() { onSettings?() }
     @objc func quitClicked() { onQuit?() }
     @objc func contextClicked() { onContext?() }
-    @objc func openHelp() { helpMode = true; headerHelp.image = NSImage(systemSymbolName: "arrow.left", accessibilityDescription: "Back to projects"); headerHelp.action = #selector(closeHelp); headerHelp.toolTip = "Back to projects"; headerHelp.setAccessibilityLabel("Back to projects"); showHelp() }
-    @objc func closeHelp() { helpMode = false; headerHelp.image = NSImage(systemSymbolName: "questionmark.circle", accessibilityDescription: "Help"); headerHelp.action = #selector(openHelp); headerHelp.toolTip = "How to use Glance"; headerHelp.setAccessibilityLabel("Help"); lastSignature = nil; render(projects: lastProjects, selected: lastSelected, unavailable: lastUnavailable) }
-    @objc func copyPrompt() { onCopyPrompt?(addProjectPrompt()) }
+    @objc func openHelp() {
+        priorScroll = scroll.contentView.bounds.origin; helpMode = true; picker.isHidden = true; pickerHeight.constant = 0
+        headerHelp.title = "Back"; headerHelp.image = NSImage(systemSymbolName: "arrow.left", accessibilityDescription: nil); headerHelp.action = #selector(closeHelp); headerHelp.setAccessibilityLabel("Back to projects")
+        showHelp()
+    }
+    @objc func closeHelp() {
+        helpMode = false; picker.isHidden = false; pickerHeight.constant = 26
+        headerHelp.title = "Help"; headerHelp.image = NSImage(systemSymbolName: "questionmark.circle", accessibilityDescription: nil); headerHelp.action = #selector(openHelp); headerHelp.setAccessibilityLabel("Help")
+        lastSignature = nil; render(projects: lastProjects, selected: lastSelected, unavailable: lastUnavailable); layoutSubtreeIfNeeded(); scroll.contentView.scroll(to: priorScroll); scroll.reflectScrolledClipView(scroll.contentView); window?.makeFirstResponder(headerHelp)
+    }
+    @objc func copyPrompt() {
+        let success = onCopyPrompt?(addProjectPrompt()) ?? false
+        let message = success ? "Copied. Paste it into your assistant." : "Could not copy. Try again."
+        copyFeedback?.isHidden = false; copyFeedback?.stringValue = message; copyFeedback?.textColor = success ? .systemGreen : .systemOrange
+        NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+    }
+    func addPromptCard() -> NSStackView {
+        let group = card(); addFull(label("Add a project", size: 14, weight: .semibold), to: group)
+        addFull(label("Ask your assistant to add this project. Glance adds projects only when you request it.", size: 12), to: group)
+        let copy = PrimaryButton(title: "Copy setup prompt", target: self, action: #selector(copyPrompt)); copy.isBordered = false; copy.wantsLayer = true; copy.layer?.cornerRadius = 6; copy.updateColor(); copy.heightAnchor.constraint(equalToConstant: 30).isActive = true; copy.focusRingType = .default; copy.contentTintColor = .white; addFull(copy, to: group)
+        let feedback = label("", size: 11); feedback.isHidden = true; copyFeedback = feedback; addFull(feedback, to: group); return group
+    }
+    @objc func toggleHelpSection(_ sender: NSButton) { let tag = sender.tag; if tag == 1 { helpContinue.toggle() } else { helpBoard.toggle() }; showHelp(); if let target = body.subviews.flatMap({ $0.subviews }).compactMap({ $0 as? NSButton }).first(where: { $0.tag == tag }) { window?.makeFirstResponder(target) } }
+    @objc func toggleNext() { nextExpanded.toggle(); lastSignature = nil; render(projects: lastProjects, selected: lastSelected, unavailable: lastUnavailable); if let target = findButton(in: body, title: nextExpanded ? "Show less" : "Show full") { window?.makeFirstResponder(target) } }
+    func findButton(in view: NSView, title: String) -> NSButton? { if let button = view as? NSButton, button.title == title { return button }; for child in view.subviews { if let found = findButton(in: child, title: title) { return found } }; return nil }
     func addProjectPrompt() -> String {
         let root = Bundle.main.bundleURL; let guide = root.appendingPathComponent("Contents/Resources/AgentGuide.md").path; let updater = root.appendingPathComponent("Contents/MacOS/glance-store").path
         return "Add this project to Glance. Read the Glance agent guide at \"\(guide)\", use the updater at \"\(updater)\", and ask if the project identity is unclear. Add only this project and confirm the saved result."
     }
     func showHelp() {
-        picker.isEnabled = false; notice.stringValue = ""; body.arrangedSubviews.forEach { body.removeArrangedSubview($0); $0.removeFromSuperview() }
-        let group = card(); addFull(label("Using Glance", size: 15, weight: .semibold), to: group)
-        addFull(detailRow("ADD A PROJECT", "Ask an assistant to add the current project. Use the prompt below; projects are added only when you request them."), to: group)
-        let copy = NSButton(title: "Copy add-project prompt", target: self, action: #selector(copyPrompt)); copy.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil); copy.imagePosition = .imageLeading; group.addArrangedSubview(copy)
-        addFull(detailRow("CONTINUE A PROJECT", "Tell the assistant to connect this session to the existing project before it updates the saved overview."), to: group)
-        addFull(detailRow("MILESTONES", "The current branch opens first. Expand other branches to see substeps; completion is maintained by the associated assistant."), to: group)
-        addFull(detailRow("FRESHNESS & USAGE", "Age and unavailable notices describe saved data. Token estimates include their scope and coverage; open Details for provenance."), to: group)
-        addFull(detailRow("OPEN AT LOGIN", "Settings offers an optional macOS login item. It stays off unless you choose to enable it."), to: group)
-        addFull(detailRow("AVAILABILITY", "The copied prompt points to this app’s guide and updater. Automatic chat recognition depends on a separately installed integration."), to: group)
-        let back = NSButton(title: "Back to projects", target: self, action: #selector(closeHelp)); group.addArrangedSubview(back); addFull(group, to: body); scroll.contentView.scroll(to: .zero); layoutSubtreeIfNeeded()
+        notice.stringValue = ""; body.arrangedSubviews.forEach { body.removeArrangedSubview($0); $0.removeFromSuperview() }
+        addFull(label("Using Glance", size: 15, weight: .semibold), to: body); addFull(addPromptCard(), to: body)
+        func section(_ title: String, _ text: String, _ open: Bool, _ tag: Int) {
+            let group = card(); let button = NSButton(title: title, target: self, action: #selector(toggleHelpSection(_:))); button.tag = tag; button.setButtonType(.toggle); button.state = open ? .on : .off; button.isBordered = false; button.image = NSImage(systemSymbolName: open ? "chevron.down" : "chevron.right", accessibilityDescription: nil); button.imagePosition = .imageLeading; group.addArrangedSubview(button)
+            if open { addFull(label(text, size: 12), to: group) }; addFull(group, to: body)
+        }
+        section("Continue a project", "Ask your assistant to connect this session to the existing project before updating its overview. Automatic chat recognition requires a separately installed integration.", helpContinue, 1)
+        section("Read the board", "The current branch opens first; expand others for substeps. Your assistant maintains completion. Saved age and notices describe stored data; Details shows token scope and provenance. Settings offers an optional login item.", helpBoard, 2)
+        layoutSubtreeIfNeeded()
     }
     @objc func toggleDetails(_ sender: NSButton) {
         guard let project = lastDisplayedID else { return }; UserDefaults.standard.set(sender.state == .on, forKey: "glance.details." + project)
@@ -199,26 +243,31 @@ final class Overview: NSView {
         if helpMode { lastProjects = projects; lastSelected = selected; lastUnavailable = unavailable; return }; picker.isEnabled = true
         let ids = projects.keys.sorted(), selectedID = selected.flatMap { projects[$0] != nil ? $0 : nil } ?? ids.first
         lastProjects = projects; lastSelected = selected; lastUnavailable = unavailable
+        picker.isHidden = ids.isEmpty; pickerHeight.constant = ids.isEmpty ? 0 : 26
+        if selectedID != lastDisplayedID { nextExpanded = false }
         let record = selectedID.flatMap { projects[$0] }
         let names = ids.map { key -> [String: String] in let data = projects[key]?["status"] as? [String: Any]; return ["id": key, "name": data?["name"] as? String ?? key] }
         let signatureObject: [String: Any] = ["projects": allProjectsMode ? projects : names, "selected": selectedID ?? "", "record": record ?? [:], "unavailable": unavailable, "backup": recoveredBackup]
         let signature = try? JSONSerialization.data(withJSONObject: signatureObject, options: [.sortedKeys])
-        func freshness(_ record: [String: Any]?) -> String {
-            guard let record else { return "" }
-            let raw = record["updatedAt"] as? String ?? ""; let date = ISO8601DateFormatter().date(from: raw)
-            let stale = date.map { Date().timeIntervalSince($0) > 7*86400 } ?? true
-            let future = date.map { Date().timeIntervalSince($0) < -60 } ?? false
-            let prefix = future ? "Clock mismatch · " : (stale ? "STALE · " : "")
-            return prefix + (allProjectsMode ? "Selected project updated " : "Updated ") + localSavedTime(raw) + " · " + savedBy(record)
+        func updateAge(_ target: NSTextField?) {
+            guard let target else { return }
+            guard let raw = record?["updatedAt"] as? String, let date = ISO8601DateFormatter().date(from: raw) else {
+                target.stringValue = "Checkpoint saved time unknown"; target.textColor = muted; return
+            }
+            let delta = Date().timeIntervalSince(date)
+            target.textColor = delta > 7 * 86400 || delta < -60 ? .systemOrange : muted
+            if delta < -60 { target.stringValue = "Checkpoint: Clock mismatch" }
+            else if delta < 60 { target.stringValue = "Checkpoint saved just now" }
+            else { target.stringValue = "Checkpoint saved " + RelativeDateTimeFormatter().localizedString(for: date, relativeTo: Date()) + (delta > 7 * 86400 ? " · stale" : "") }
         }
-        if let signature, signature == lastSignature { freshnessLabel?.stringValue = freshness(record); return }
+        if let signature, signature == lastSignature { updateAge(ageLabel); return }
         let previousOffset = scroll.contentView.bounds.origin; let preserve = selectedID == lastDisplayedID
         lastSignature = signature; lastDisplayedID = selectedID
         picker.removeAllItems()
         for id in ids { let data = projects[id]?["status"] as? [String: Any]; let name = data?["name"] as? String ?? id; let duplicate = names.filter { $0["name"] == name }.count > 1; let item = NSMenuItem(title: duplicate ? "\(name) · \(id)" : name, action: nil, keyEquivalent: ""); item.representedObject = id; picker.menu?.addItem(item) }
         if let selectedID, let item = picker.itemArray.first(where: { $0.representedObject as? String == selectedID }) { picker.select(item) }
         notice.stringValue = recoveredBackup ? "Current data unavailable · showing previous backup" : (unavailable ? (projects.isEmpty ? "Saved data unavailable" : "Unavailable · showing last saved view") : "")
-        body.arrangedSubviews.forEach { body.removeArrangedSubview($0); $0.removeFromSuperview() }; freshnessLabel?.stringValue = freshness(record); freshnessLabel?.toolTip = (record?["updatedAt"] as? String).map { "Saved timestamp: " + $0 }
+        body.arrangedSubviews.forEach { body.removeArrangedSubview($0); $0.removeFromSuperview() }; ageLabel = nil
         if allProjectsMode && !ids.isEmpty {
             for id in ids {
                 guard let data = projects[id]?["status"] as? [String: Any] else { continue }
@@ -232,7 +281,7 @@ final class Overview: NSView {
             }
             return
         }
-        guard let id = selectedID, let record else { addFull(label(unavailable ? "Project status is unavailable." : "No projects enrolled.", color: muted), to: body); return }
+        guard let id = selectedID, let record else { addFull(label(unavailable ? "Project status is unavailable." : "No projects enrolled.", color: muted), to: body); if !unavailable { addFull(addPromptCard(), to: body) }; return }
         guard let data = record["status"] as? [String: Any], let goal = data["goal"] as? String, let checkpoint = data["checkpoint"] as? String, let status = data["status"] as? String else { addFull(label("Project status is invalid or unavailable.", color: .systemOrange), to: body); return }
         let allButton = NSButton(title: "All projects", target: self, action: #selector(showAllProjects)); body.addArrangedSubview(allButton)
         let overview = column(6)
@@ -243,15 +292,23 @@ final class Overview: NSView {
         } else { addFull(label(status, size: 14, weight: .semibold), to: overview) }
         addFull(separator(), to: overview)
         addFull(fieldRow("Checkpoint", checkpoint), to: overview)
-        if case .items(let items) = checklist(data), !items.isEmpty { addFull(fieldRow("Progress", "\(items.filter(\.done).count) of \(items.count) milestones"), to: overview) }
-        addFull(fieldRow("Next", (data["next"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Not provided"), to: overview)
+        let savedAge = label("", size: 11, color: muted); ageLabel = savedAge; updateAge(savedAge)
+        addFull(savedAge, to: overview)
+        let next = (data["next"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Not provided"
+        let nextGroup = column(3); addFull(label("Next", size: 11, weight: .semibold, color: muted), to: nextGroup)
+        let nextText = label(next, size: 12); nextText.isSelectable = true; nextText.maximumNumberOfLines = nextExpanded ? 0 : 3; nextText.lineBreakMode = .byWordWrapping; addFull(nextText, to: nextGroup)
+        let storage = NSTextStorage(string: next, attributes: [.font: NSFont.systemFont(ofSize: 12)])
+        let manager = NSLayoutManager(); let container = NSTextContainer(containerSize: NSSize(width: frame.width - 32 - NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy) - 4, height: CGFloat.greatestFiniteMagnitude)); container.lineFragmentPadding = 0; manager.addTextContainer(container); storage.addLayoutManager(manager)
+        let glyphs = manager.glyphRange(for: container); var lines = 0; manager.enumerateLineFragments(forGlyphRange: glyphs) { _, _, _, _, _ in lines += 1 }
+        if lines > 3 { let button = NSButton(title: nextExpanded ? "Show less" : "Show full", target: self, action: #selector(toggleNext)); button.setAccessibilityLabel(nextExpanded ? "Show less of next action" : "Show full next action"); nextGroup.addArrangedSubview(button) }
+        addFull(nextGroup, to: overview)
 
         let detailed = UserDefaults.standard.bool(forKey: "glance.details." + id)
         let details = NSButton(title: detailed ? "Hide details" : "Details", target: self, action: #selector(toggleDetails(_:))); details.setButtonType(.toggle); details.state = detailed ? .on : .off; details.isBordered = false; details.image = NSImage(systemSymbolName: detailed ? "chevron.down" : "chevron.right", accessibilityDescription: nil); details.imagePosition = .imageLeading; details.setAccessibilityLabel(detailed ? "Hide project details" : "Show project details"); overview.addArrangedSubview(details)
         if detailed {
         if let raw = data["tokenUsage"] { if let u = usage(raw, scopes: ["project", "linked-chat"], defaultScope: "project") { let prefix = u.scope == "linked-chat" ? "Linked chat · " : "Estimated project tokens · "; let line = label(prefix + tokensText(u) + (u.scope == "linked-chat" ? " · Project total not measured" : ""), size: 11, color: muted); line.toolTip = tokenDetails(u) + " · Coverage: " + u.coverage; line.setAccessibilityHelp(line.toolTip); addFull(line, to: overview) } else { addFull(label("Project usage unavailable · invalid data", size: 11, color: .systemOrange), to: overview) } } else { addFull(label("Project usage · Not measured", size: 11, color: muted), to: overview) }
             let savedAt = localSavedTime(record["updatedAt"])
-            addFull(detailRow("SAVED AT", savedAt), to: overview)
+            addFull(detailRow("SAVED AT", savedAt + " · " + savedBy(record)), to: overview)
             addFull(detailGroups("GOAL", goal), to: overview)
             addFull(detailGroups("SAVED STATUS", status), to: overview)
             if let closure = data["checkpointClosure"] as? [String: Any] {
@@ -321,7 +378,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         NSApp.setActivationPolicy(.accessory); let menu = NSMenu(); let item = NSMenuItem(); menu.addItem(item); let sub = NSMenu(); sub.addItem(withTitle: "Quit Glance", action: #selector(quit), keyEquivalent: "q"); item.submenu = sub; NSApp.mainMenu = menu
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength); status.button?.image = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: "Glance"); status.button?.image?.isTemplate = true; status.button?.toolTip = "Glance"; status.button?.setAccessibilityLabel("Glance"); status.button?.target = self; status.button?.action = #selector(toggle)
         let controller = NSViewController(); controller.view = overview; popover.contentViewController = controller; popover.contentSize = overview.frame.size; popover.behavior = .transient; popover.delegate = self
-        overview.onSelect = { [weak self] id in self?.selected = id; UserDefaults.standard.set(id, forKey: "selectedProject"); self?.redraw() }; overview.onQuit = { NSApp.terminate(nil) }; overview.onSettings = { [weak self] in self?.settings() }; overview.onCopyPrompt = { prompt in let pasteboard = NSPasteboard.general; pasteboard.clearContents(); pasteboard.setString(prompt, forType: .string) }; overview.onContext = { [weak self] in self?.openContext() }
+        overview.onSelect = { [weak self] id in self?.selected = id; UserDefaults.standard.set(id, forKey: "selectedProject"); self?.redraw() }; overview.onQuit = { NSApp.terminate(nil) }; overview.onSettings = { [weak self] in self?.settings() }; overview.onCopyPrompt = { prompt in return writeSetupPrompt(prompt, to: NSPasteboard.general) }; overview.onContext = { [weak self] in self?.openContext() }
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(wake), name: NSWorkspace.didWakeNotification, object: nil)
         refresh(); watch(); timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.refresh() }; if CommandLine.arguments.contains("--show") { DispatchQueue.main.async { [weak self] in self?.showPopover() } }
     }
@@ -376,6 +433,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
     func refresh() {
         if let projects = readValidated(root.appendingPathComponent("store.json")) { cached = projects; hasSnapshot = true; usingBackup = false; unavailable = false; redraw(); return }
+        func absent(_ name: String) -> Bool { var info = stat(); return lstat(root.appendingPathComponent(name).path, &info) != 0 && errno == ENOENT }
+        if !hasSnapshot && absent("store.json") && absent("store.backup.json") { cached = [:]; unavailable = false; usingBackup = false; redraw(); return }
         if !hasSnapshot, let backup = readValidated(root.appendingPathComponent("store.backup.json")) { cached = backup; hasSnapshot = true; usingBackup = true }
         unavailable = true; redraw()
     }
@@ -433,6 +492,6 @@ func preview(_ path: String) {
     if caseName == nil || caseName == "empty" { capture("empty", [:], nil) }
     if caseName == "help" { capture("help", [:], nil) }
     var invalid = payload; invalid["checklist"] = [["id":"broken", "title":"Unknown", "done":1]]; if caseName == nil || caseName == "invalid" { capture("invalid", ["demo":["id":"demo", "status":invalid, "updatedAt":now]], "demo") }
-    var long = payload; long["goal"] = String(repeating:"A longer fictional goal for testing wrapping. ", count: 8); long.removeValue(forKey: "currentMilestoneID"); long["checklist"] = (1...12).map { ["id":"item-\($0)", "title":"Milestone \($0) with a longer description for scrolling", "done":false] as [String : Any] }; if caseName == nil || caseName == "long" { capture("long", ["demo":["id":"demo", "status":long, "updatedAt":now]], "demo") }; if caseName == nil || caseName == "long-bottom" { capture("long-bottom", ["demo":["id":"demo", "status":long, "updatedAt":now]], "demo", bottom: true) }
+    var long = payload; long["next"] = String(repeating:"Review this next action carefully before proceeding. ", count: 10); long["goal"] = String(repeating:"A longer fictional goal for testing wrapping. ", count: 8); long.removeValue(forKey: "currentMilestoneID"); long["checklist"] = (1...12).map { ["id":"item-\($0)", "title":"Milestone \($0) with a longer description for scrolling", "done":false] as [String : Any] }; if caseName == nil || caseName == "long" { capture("long", ["demo":["id":"demo", "status":long, "updatedAt":now]], "demo") }; if caseName == nil || caseName == "long-bottom" { capture("long-bottom", ["demo":["id":"demo", "status":long, "updatedAt":now]], "demo", bottom: true) }
 }
 if let i = CommandLine.arguments.firstIndex(of: "--preview"), i+1 < CommandLine.arguments.count { preview(CommandLine.arguments[i+1]) } else { let app = NSApplication.shared; let delegate = AppDelegate(); app.delegate = delegate; app.run() }

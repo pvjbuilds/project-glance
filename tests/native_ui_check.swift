@@ -7,28 +7,44 @@ func runNativeChecks() {
     func descendants(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(descendants) }
     func has(_ text: String) -> Bool { descendants(view.body).compactMap { $0 as? NSTextField }.contains { $0.stringValue == text } }
     func disclosure() -> NSButton? { descendants(view.body).compactMap { $0 as? NSButton }.first { $0.identifier?.rawValue == "parent" } }
+    func freshNextHasDisclosure(_ next: String) -> Bool {
+        let fresh = Overview(); let freshWindow = NSWindow(contentRect: fresh.frame, styleMask: [.titled], backing: .buffered, defer: false); freshWindow.contentView = fresh
+        var record = projectA; var status = record["status"] as! [String: Any]; status["next"] = next; record["status"] = status
+        fresh.render(projects:["a":record], selected:"a", unavailable:false)
+        fresh.layoutSubtreeIfNeeded(); return descendants(fresh.body).compactMap { $0 as? NSButton }.contains { $0.title == "Show full" }
+    }
+    precondition(!freshNextHasDisclosure("Connect one assistant, then verify a saved update."), "fresh one-line Next incorrectly disclosed")
+    precondition(!freshNextHasDisclosure("First line has a sensible amount of content.\nSecond line has a sensible amount of content.\nThird line has a sensible amount of content."), "fresh three-line Next incorrectly disclosed")
+    precondition(freshNextHasDisclosure("First line has a sensible amount of content.\nSecond line has a sensible amount of content.\nThird line has a sensible amount of content.\nFourth line."), "fresh four-line Next did not disclose")
+    precondition(!freshNextHasDisclosure(Array(repeating: "checkpoint", count: 15).joined(separator: " ")), "three wrapped lines incorrectly disclosed")
+    precondition(freshNextHasDisclosure(Array(repeating: "checkpoint", count: 20).joined(separator: " ")), "four wrapped lines not disclosed")
     view.render(projects:["a":projectA,"b":projectB], selected:"a", unavailable:false); view.layoutSubtreeIfNeeded(); window.orderFront(nil); window.display(); RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.2))
     precondition(view.picker.numberOfItems == 2 && view.picker.itemArray.map { $0.representedObject as? String } == ["a", "b"])
     precondition(has("Child marker") && has("Parent  ·  Current"), "current branch did not expand or identify current")
     precondition(has("Checkpoint") && has("Next"), "field labels missing")
-    precondition(has("Progress") && has("0 of 1 milestones"), "compact status board missing milestone progress")
+    precondition(has("0 of 1 milestones complete") && !has("Progress"), "milestone count missing or duplicated")
     precondition(!has("Linked chat · ≈1.0K tokens · Project total not measured"), "usage displayed outside Details")
     precondition(view.scroll.scrollerStyle == .legacy && view.scroll.bounds.width - view.scroll.contentSize.width >= 10, "scroll gutter is not reserved")
     guard let allProjects = descendants(view).compactMap({ $0 as? NSButton }).first(where: { $0.title == "All projects" }) else { fatalError("all projects action missing") }
     allProjects.performClick(nil); precondition(has("Checkpoint A") && has("Checkpoint B"), "all projects did not show both checkpoints")
     guard let projectButton = descendants(view.body).compactMap({ $0 as? NSButton }).first(where: { $0.identifier?.rawValue == "a" }) else { fatalError("project selection missing") }; projectButton.performClick(nil); precondition(has("Child marker"), "project selection did not open selected project")
-    var copied = ""; view.onCopyPrompt = { copied = $0 }; view.openHelp()
+    let pasteboard = NSPasteboard(name: NSPasteboard.Name("glance-test-" + UUID().uuidString)); defer { pasteboard.releaseGlobally() }
+    let expected = "Add this project to Glance. Read the Glance agent guide at \"\(Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/AgentGuide.md").path)\", use the updater at \"\(Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/glance-store").path)\", and ask if the project identity is unclear. Add only this project and confirm the saved result."
+    precondition(writeSetupPrompt(view.addProjectPrompt(), to: pasteboard) && pasteboard.string(forType: .string) == expected, "actual pasteboard prompt differs")
+    var copied = ""; view.onCopyPrompt = { copied = $0; return true }; view.openHelp()
     precondition(has("Using Glance"), "help did not open")
-    guard let copy = descendants(view).compactMap({ $0 as? NSButton }).first(where: { $0.title == "Copy add-project prompt" }) else { fatalError("missing copy") }; copy.performClick(nil)
-    precondition(copied.contains("Contents/Resources/AgentGuide.md") && copied.contains("Contents/MacOS/glance-store"), "copy prompt missing app paths")
+    precondition(view.picker.isHidden && view.headerHelp.title == "Back", "help navigation should hide picker and provide one Back")
+    guard let copy = descendants(view).compactMap({ $0 as? NSButton }).first(where: { $0.title == "Copy setup prompt" }) else { fatalError("missing copy") }; copy.performClick(nil)
+    precondition(copied.contains("Contents/Resources/AgentGuide.md") && copied.contains("Contents/MacOS/glance-store") && has("Copied. Paste it into your assistant."), "copy prompt or confirmation missing")
+    view.onCopyPrompt = { _ in false }; copy.performClick(nil); precondition(has("Could not copy. Try again."), "copy failure missing")
     precondition(view.headerHelp.action == #selector(Overview.closeHelp), "header back unavailable"); view.headerHelp.performClick(nil); precondition(!view.helpMode && view.headerHelp.action == #selector(Overview.openHelp) && has("Child marker"), "header back did not restore overview")
 
     guard let details = descendants(view).compactMap({ $0 as? NSButton }).first(where: { $0.title == "Details" }) else { fatalError("missing details") }; details.performClick(nil); precondition(has("Fixture coverage") && has("Linked chat · ≈1.0K tokens · Project total not measured"), "details did not expose usage and coverage")
 
     var healthProject = projectA; var healthStatus = healthProject["status"] as! [String: Any]; healthStatus["health"] = ["state":"waiting-on-you", "reason":"Awaiting a decision"]; healthProject["status"] = healthStatus; healthProject["updatedBySession"] = "codex-example"
     view.render(projects:["a":healthProject], selected:"a", unavailable:false)
-    precondition(has("Waiting on you") && has("Awaiting a decision") && view.freshnessLabel!.stringValue.contains(" · Codex") && !has("Saved health: Waiting on you · age above is time since save"), "health or saver presentation missing")
-    precondition(!view.freshnessLabel!.stringValue.contains("2026-11-06T00:00:00Z") && !has("codex-example") && has("Goal"), "friendly saved time or goal missing")
+    precondition(has("Waiting on you") && has("Awaiting a decision") && has("SAVED AT") && !has("Saved health: Waiting on you · age above is time since save"), "health or saver presentation missing")
+    precondition(!has("codex-example") && has("Goal"), "friendly saved time or goal missing")
     guard let technical = descendants(view).compactMap({ $0 as? NSButton }).first(where: { $0.title == "Technical details" }) else { fatalError("technical details missing") }; technical.performClick(nil)
     precondition(has("2026-11-06T00:00:00Z") && has("codex-example"), "technical details did not expose timestamp and session ID")
     var features = projectA; var featureStatus = features["status"] as! [String: Any]
@@ -42,6 +58,14 @@ func runNativeChecks() {
     precondition(has("2–4 hours") && has("Prior work"), "effort range details missing")
     precondition(has("November") && has("October complete") && has("December"), "recurring cycle details missing")
     precondition(has("Waiting for reviewer") && has("Review request"), "external wait details missing")
+    var longNext = projectA; var nextStatus = longNext["status"] as! [String: Any]; let fullNext = Array(repeating: "A detailed next action with its exact spacing.", count: 12).joined(separator: "  "); nextStatus["next"] = fullNext; longNext["status"] = nextStatus
+    nextStatus["next"] = "First line\nSecond line\nThird line"; longNext["status"] = nextStatus
+    view.render(projects:["a":longNext], selected:"a", unavailable:false); precondition(!descendants(view.body).compactMap({ $0 as? NSButton }).contains(where: { $0.title == "Show full" }), "three lines should not disclose")
+    nextStatus["next"] = "First line\nSecond line\nThird line\nFourth line"; longNext["status"] = nextStatus
+    view.render(projects:["a":longNext], selected:"a", unavailable:false); precondition(descendants(view.body).compactMap({ $0 as? NSButton }).contains(where: { $0.title == "Show full" }), "four lines should disclose")
+    nextStatus["next"] = fullNext; longNext["status"] = nextStatus; view.render(projects:["a":longNext], selected:"a", unavailable:false)
+    guard let showFull = descendants(view.body).compactMap({ $0 as? NSButton }).first(where: { $0.title == "Show full" }) else { fatalError("long next action missing disclosure") }; showFull.performClick(nil); precondition(has(fullNext), "full next action changed"); precondition((window.firstResponder as? NSButton)?.title == "Show less", "next disclosure lost focus")
+    view.ageLabel?.stringValue = "outdated"; view.render(projects:["a":longNext], selected:"a", unavailable:false); precondition(view.ageLabel?.stringValue != "outdated", "unchanged refresh did not update saved age")
     let priorScroll = view.scroll.contentView.bounds.origin
     var renamedB = projectB; var renamedStatus = renamedB["status"] as! [String: Any]; renamedStatus["name"] = "Renamed"; renamedB["status"] = renamedStatus
     view.render(projects:["a":projectA,"b":renamedB], selected:"a", unavailable:false)
@@ -57,13 +81,18 @@ func runNativeChecks() {
     view.render(projects:["a":long], selected:"a", unavailable:false); view.layoutSubtreeIfNeeded(); let maxScroll = view.body.frame.height - view.scroll.contentSize.height; precondition(maxScroll > 20); view.scroll.contentView.scroll(to:NSPoint(x:0,y:20)); let offset = view.scroll.contentView.bounds.origin.y
     view.render(projects:["a":long], selected:"a", unavailable:false); precondition(view.scroll.contentView.bounds.origin.y == offset, "unchanged refresh moved scroll")
     var aged = projectA; aged["updatedAt"] = "2000-01-01T00:00:00Z"; view.render(projects:["a":aged], selected:"a", unavailable:true)
-    precondition(view.freshnessLabel!.stringValue.contains("STALE") && view.notice.stringValue.contains("Unavailable"), "stale or unavailable warning missing")
+    precondition(view.ageLabel!.textColor == .systemOrange && view.notice.stringValue.contains("Unavailable"), "stale or unavailable warning missing")
     aged["updatedAt"] = "2999-01-01T00:00:00Z"; view.render(projects:["a":aged], selected:"a", unavailable:false)
-    precondition(view.freshnessLabel!.stringValue.contains("Clock mismatch"), "future date warning missing")
+    precondition(view.ageLabel!.stringValue.contains("Clock mismatch"), "future date warning missing")
     aged["updatedAt"] = "invalid"; view.render(projects:["a":aged], selected:"a", unavailable:false)
-    precondition(view.freshnessLabel!.stringValue.contains("Unknown"), "unknown date warning missing")
-    view.showAllProjects(); precondition(view.freshnessLabel!.stringValue.contains("Selected project updated"), "all-projects footer is ambiguous")
+    precondition(has("Checkpoint saved time unknown"), "unknown date warning missing")
+    view.showAllProjects(); precondition(view.ageLabel == nil, "all-projects should not show selected age")
     let root = URL(fileURLWithPath: CommandLine.arguments[CommandLine.arguments.firstIndex(of: "--store")! + 1], isDirectory: true); try! FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let initial = AppDelegate(); initial.refresh()
+    precondition(!initial.unavailable && initial.overview.picker.isHidden && descendants(initial.overview.body).compactMap({ $0 as? NSButton }).contains(where: { $0.title == "Copy setup prompt" }), "missing store did not offer setup")
+    try! Data("{".utf8).write(to: root.appendingPathComponent("store.json")); initial.refresh()
+    precondition(initial.unavailable && !descendants(initial.overview.body).compactMap({ $0 as? NSButton }).contains(where: { $0.title == "Copy setup prompt" }), "corrupt store showed empty setup")
+    try! FileManager.default.removeItem(at: root.appendingPathComponent("store.json"))
     let validRecord: [String: Any] = ["id":"a", "schema":1, "version":1, "request":"request", "sessions":["session"], "status":projectA["status"]!]
     let backup = try! JSONSerialization.data(withJSONObject: ["schema":1, "projects":["a":validRecord]])
     try! backup.write(to: root.appendingPathComponent("store.backup.json")); let broken = Data("{".utf8); try! broken.write(to: root.appendingPathComponent("store.json"))
@@ -76,6 +105,8 @@ func runNativeChecks() {
         try! JSONSerialization.data(withJSONObject: envelope).write(to: root.appendingPathComponent("store.backup.json")); let fallback = AppDelegate(); fallback.refresh(); precondition(fallback.unavailable && !fallback.usingBackup && fallback.cached.isEmpty, "invalid backup accepted")
     }
     try! backup.write(to: root.appendingPathComponent("store.backup.json"))
+    let removal = AppDelegate(); try! backup.write(to: root.appendingPathComponent("store.json")); removal.refresh(); try! FileManager.default.removeItem(at: root.appendingPathComponent("store.json")); removal.refresh(); precondition(removal.unavailable && removal.hasSnapshot && !removal.cached.isEmpty, "removed store lost snapshot or showed empty setup")
+    try! broken.write(to: root.appendingPathComponent("store.json"))
     let delegate = AppDelegate(); delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification)); precondition(delegate.status.length == NSStatusItem.squareLength && delegate.status.button?.image?.isTemplate == true && delegate.status.button?.action == #selector(AppDelegate.toggle) && delegate.status.button?.target === delegate)
     precondition(delegate.usingBackup && delegate.unavailable && delegate.cached["a"] != nil, "valid backup not displayed"); precondition((try! Data(contentsOf: root.appendingPathComponent("store.json"))) == broken, "viewer changed corrupt primary")
     try! backup.write(to: root.appendingPathComponent("store.json")); delegate.wake()

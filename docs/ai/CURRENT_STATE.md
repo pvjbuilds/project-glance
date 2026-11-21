@@ -1,3 +1,11 @@
+## Installed 0.3.0 candidate · 20 November 2026
+
+0.3.0 build 7 is installed locally at `~/Applications/Glance.app`. It adds labeled Help and grouped guidance, setup copy with immediate feedback, checkpoint age beside the saved checkpoint, and a three-line Next preview with full disclosure when needed. The milestone count appears once beside the checklist.
+
+Terra 6.1 medium implemented the candidate. Sol reviewed the frozen diff and rendered AppKit fixtures. Review caught an incorrectly disclosed short Next and a gray primary action. Terra corrected both, consolidated age diagnostics and moved the milestone count to the checklist. The final source review passed within scope (solo:codex, shared-provider blind spots). Reviewed Viewer SHA-256 `a3d03cdbc90b734630e147399cc2dd2127c02bc00e15a2de5f3defdbf049ebdc`.
+
+The applied source built and passed the native desktop harness. Seven non-UI suites passed during review. The installed app passed signature and component-byte checks and restarted successfully. The installed updater read the saved records, and the store files matched their pre-install hashes. Physical VoiceOver, click-away on the installed candidate, wake, Spaces, displays and login remain unverified in this pass. Those checks establish local source-build behavior. The public 0.3.0 distribution is a source prerelease.
+
 ## Current checkpoint · 20 November 2026
 
 The public MIT source prerelease is v0.2.2 at `ab43b6a`. GitHub shows successful hosted checks for that revision. The local app has been updated to 0.2.3 build 6 for outside-click dismissal. The installed bundle matches the built viewer, updater, guide and plist, passes signature verification, and was relaunched successfully.

@@ -1,8 +1,14 @@
 # Changelog
 
-## 0.2.3 — source alpha
+## 0.3.0 · 2026-11-21 · source prerelease
 
-- Dismiss the menu-bar popover on outside mouse clicks.
+- Dismiss the popover when you click outside it, then reopen it from the menu bar.
+- Open Help from a labeled button and copy the setup prompt with immediate feedback. The same action appears before the first project is added.
+- See when the checkpoint was saved, expand a long next action, and find the milestone count above the checklist.
+
+## 0.2.3 · local build
+
+- Tested outside-click dismissal locally before incorporating it into 0.3.0.
 
 ## 0.2.2 — source alpha
 

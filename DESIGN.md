@@ -57,3 +57,6 @@ The picker identifies each project by name and stable ID. Nested milestone branc
 
 ## 7 November 2026 selected refinement
 Direction 3, Status board, selected by Praj with tighter spacing. Use flat sections on the charcoal shell, aligned label/value rows, thin dividers and six-point summary spacing. Health uses semantic color; pending/completed milestone state remains explicit. Goal and full status remain accessible in Details; raw timestamp, project and session identifiers sit behind Technical details. Show localized short saved date and saver label in a fixed footer; stale, clock mismatch and unavailable warnings remain explicit. Friendly project names are disambiguated with stable IDs only for duplicates. The fixed 400 by 570-point native surface and nested disclosure behavior remain. This dated section supersedes the earlier overview and milestone card styling.
+
+## 20 November 2026 candidate refinement
+Help uses a labeled header control, an Add card and compact expandable guidance. The setup action uses a native primary button and feedback. Saved age sits by the checkpoint; absolute saved time and author remain in Details. Long next actions have a three-line preview and an accessible expansion control.
